@@ -20,6 +20,11 @@ detection, and a fast lossless export.
 - **GUI and CLI:** the same engine works from the command line for scripting and
   batch jobs.
 
+![Silence Remover exporting a 21-minute recording: the waveform shows 226 cuts shaded red, and the stats read "Original 21:07 → 12:29, removed 8:37 (41%)"](silence_remover/docs/image2.png)
+
+*A 21-minute recording with 226 silent parts (red) being removed; 41% of the
+length is cut.*
+
 ---
 
 ## Quick start
@@ -63,6 +68,8 @@ python -m silence_remover talk.mp4 talk_cut.mp4 # command line, default settings
 ---
 
 ## Using the desktop app
+
+![Silence Remover start screen with an empty timeline and the Detection, Threshold, Minimum silence, Softness and Export controls](silence_remover/docs/image.png)
 
 1. **Open video…** Pick a video or audio file (mp4, mkv, mov, avi, webm, m4v,
    mp3, wav or m4a). The app analyzes it once; a one-hour file takes a few

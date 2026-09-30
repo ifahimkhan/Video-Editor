@@ -120,3 +120,34 @@ def test_cli_dry_run_and_export(speech_clip, tmp_path, capsys):
     assert cli.main([str(speech_clip), str(tmp_path / "y.mp4")]) == 0
     assert (tmp_path / "y.mp4").exists()
     assert cli.main([str(speech_clip), str(tmp_path / "z.mp4"), "-t", "5"]) == 1
+
+
+def test_sum_expr_is_balanced_and_complete():
+    from silence_remover.render import sum_expr
+    assert sum_expr(["a"]) == "a"
+    assert sum_expr(["a", "b", "c", "d"]) == "((a+b)+(c+d))"
+    expr = sum_expr([f"x{i}" for i in range(1000)])
+    assert all(f"x{i}" in expr for i in (0, 499, 999))
+    # Never a flat a+b+c chain: each parenthesis group holds at most one '+'.
+    plus_per_group = [0]
+    for ch in expr:
+        if ch == "(":
+            plus_per_group.append(0)
+        elif ch == ")":
+            assert plus_per_group.pop() <= 1
+        elif ch == "+":
+            plus_per_group[-1] += 1
+    assert plus_per_group == [0]
+    with pytest.raises(ValueError):
+        sum_expr([])
+
+
+@requires_ffmpeg
+def test_precise_export_with_more_than_100_cuts(tmp_path):
+    """Regression: FFmpeg rejects flat expressions over 100 terms (ENOMEM)."""
+    clip = tmp_path / "many.mp4"
+    make_clip(clip, 30, [])
+    keep = tuple(Segment(i * 200, i * 200 + 100) for i in range(150))
+    out = render(clip, tmp_path / "out.mp4", keep)
+    assert stream_duration(out, "v") == pytest.approx(15.0, abs=0.1)
+    assert stream_duration(out, "a") == pytest.approx(15.0, abs=0.1)

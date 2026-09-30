@@ -56,9 +56,7 @@ def build_filter_graph(
     if not (has_video or has_audio):
         raise ValueError("Input has neither video nor audio.")
 
-    select = "+".join(
-        f"between(t,{_sec(s.start_ms)},{_sec(s.end_ms)})" for s in keep
-    )
+    select = sum_expr([f"between(t,{_sec(s.start_ms)},{_sec(s.end_ms)})" for s in keep])
     offset = _removed_before_expr(invert(keep, duration_ms))
 
     chains = []
@@ -169,7 +167,23 @@ def _removed_before_expr(cuts: tuple[Segment, ...]) -> str:
     """
     if not cuts:
         return "0"
-    return "+".join(f"gt(T,{_sec(c.start_ms)})*{_sec(c.length_ms)}" for c in cuts)
+    return sum_expr([f"gt(T,{_sec(c.start_ms)})*{_sec(c.length_ms)}" for c in cuts])
+
+
+def sum_expr(terms: list[str]) -> str:
+    """Sum of `terms` as a balanced tree of parenthesised pairs.
+
+    FFmpeg's expression parser fails with "Cannot allocate memory" once a
+    single `a+b+c+...` chain exceeds 100 terms, which a real video with
+    100+ cuts easily does. Nesting pairs keeps every chain at 2 terms and
+    the depth at log2(n).
+    """
+    if not terms:
+        raise ValueError("sum_expr needs at least one term")
+    if len(terms) == 1:
+        return terms[0]
+    mid = len(terms) // 2
+    return f"({sum_expr(terms[:mid])}+{sum_expr(terms[mid:])})"
 
 
 def _sec(ms: int) -> str:
