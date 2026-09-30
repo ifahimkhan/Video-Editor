@@ -1,0 +1,7 @@
+numpy>=1.26
+PyQt6>=6.6
+pyqtgraph>=0.13.4
+onnxruntime>=1.16   # optional: Voice (Silero VAD) mode
+# dev
+pytest>=8
+pytest-cov>=5
