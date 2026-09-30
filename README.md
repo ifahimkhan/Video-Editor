@@ -17,6 +17,8 @@ detection, and a fast lossless export.
   red cut regions update live.
 - **Two export modes:** *Precise* (frame-accurate re-encode) or *Fast lossless*
   (stream copy, no quality loss, done in seconds).
+- **Swap audio:** replace a video's soundtrack with a cleaned-up recording; the
+  picture is copied untouched.
 - **Audio extractor:** save any video's full soundtrack as an MP3 in one click.
 - **GUI and CLI:** the same engine works from the command line for scripting and
   batch jobs.
@@ -81,6 +83,16 @@ python -m silence_remover talk.mp4 talk_cut.mp4 # command line, default settings
 3. **Pick an export mode** and click **Export…**. A progress bar shows the
    export, and **Cancel** stops it at any time.
 
+**Swap audio…** replaces the video's soundtrack with another audio file, for
+example a version cleaned up in a noise-removal tool. Pick the clean audio
+(wav, mp3, m4a, aac, flac, ogg or opus), then where to save.
+- The video stream is copied untouched (bit-identical, no quality loss); only
+  the new audio is encoded (AAC 192 kbps, or Opus for `.webm`).
+- The result always has the video's length. Shorter audio is padded with
+  silence and longer audio is trimmed, with a warning when the two differ by
+  more than half a second.
+- No silence is removed. To also cut pauses, open the swapped video and export
+  it as usual.
 **Export audio (MP3)…** saves the video's complete original audio track as an
 MP3 (192 kbps, with title/artist tags copied). It works independently of the
 silence settings: nothing is cut. The button becomes available once a file has
@@ -152,7 +164,7 @@ well. Screen recordings often have only one every 10 s or more, so use
 
 ```bash
 python -m silence_remover                          # no arguments: open the desktop app
-python -m silence_remover INPUT OUTPUT [options]   # remove silence (or extract audio)
+python -m silence_remover INPUT OUTPUT [options]   # remove silence, extract or swap audio
 python -m silence_remover -h                       # list all options
 ```
 
@@ -161,7 +173,7 @@ python -m silence_remover -h                       # list all options
 | Argument | Description |
 |---|---|
 | `INPUT` | Source video or audio file (mp4, mkv, mov, avi, webm, m4v, mp3, wav, m4a, …). |
-| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video, `.mp3` for `--extract-audio`. Required even with `--dry-run`, which never writes it. |
+| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video (use the source's extension with `--swap-audio`), `.mp3` for `--extract-audio`. Required even with `--dry-run`, which never writes it. |
 
 ### Options
 
@@ -177,9 +189,12 @@ python -m silence_remover -h                       # list all options
 | `--dry-run` | off | | Analyze and print what would be cut; write nothing. |
 | `--extract-audio` | off | | Save INPUT's full audio track as MP3 to OUTPUT. No silence removal, so the detection options, `--lossless` and `--dry-run` are ignored. |
 | `--mp3-bitrate KBPS` | `192` | 64, 96, 128, 160, 192, 256, 320 | MP3 bitrate for `--extract-audio`. |
+| `--swap-audio AUDIO` | | path to an audio file | Replace INPUT's soundtrack with AUDIO and save to OUTPUT. The video is copied untouched and no silence is removed, so the detection options, `--lossless` and `--dry-run` are ignored. |
+| `--audio-offset MS` | `0` | −60000 to 60000 | With `--swap-audio`: shift the new audio later (positive) or earlier (negative). |
 
 `-t` only applies in loudness mode and `-v` only in voice mode; the other
-detection options apply to both.
+detection options apply to both. `--extract-audio` and `--swap-audio` are
+separate jobs and can't be combined.
 
 ### Examples
 
@@ -195,6 +210,12 @@ python -m silence_remover podcast.mp4 podcast_cut.mp4 -t -40 -p 250
 
 # Noisy recording: detect speech instead of loudness
 python -m silence_remover vlog.mp4 vlog_cut.mp4 --mode voice -v 0.4
+
+# Put the cleaned-up audio back on the video
+python -m silence_remover talk.mp4 talk_clean.mp4 --swap-audio talk_clean.wav
+
+# ...and shift it 120 ms later if it runs ahead of the picture
+python -m silence_remover talk.mp4 talk_clean.mp4 --swap-audio talk_clean.wav --audio-offset 120
 
 # Fast, lossless, with tighter pauses
 python -m silence_remover interview.mov interview_cut.mov --lossless -m 300
@@ -213,7 +234,8 @@ Get-ChildItem *.mp4 | ForEach-Object { python -m silence_remover $_ "cut_$($_.Na
 The exit code is `0` on success and `1` on errors. Errors include invalid
 settings, a missing file, a file without audio, everything being below the
 threshold, and voice mode without `onnxruntime`. An unknown option or an
-out-of-list `--mp3-bitrate` makes argparse print usage and exit with `2`.
+out-of-list `--mp3-bitrate`, or combining `--extract-audio` with `--swap-audio`,
+makes argparse print usage and exit with `2`.
 
 ---
 
@@ -264,6 +286,7 @@ silence_remover/
   segments.py      silence detection (pure functions)
   render.py        precise export (re-encode) with progress and cancel
   lossless.py      keyframe scan, snapping, stream-copy export
+  swap_audio.py    replace the soundtrack, video stream-copied
   audio_export.py  full audio track to MP3 (libmp3lame)
   models/
     silero_vad_v6.onnx
@@ -282,7 +305,7 @@ tests/
 ## Development
 
 ```bash
-python -m pytest -q                            # 85 tests
+python -m pytest -q                            # 105 tests
 python -m pytest -q --cov=silence_remover      # with coverage (~88%)
 ruff check .                                   # lint (config in ruff.toml)
 ```

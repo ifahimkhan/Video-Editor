@@ -14,6 +14,7 @@ from ..ffmpeg_tools import FFmpegError
 from ..lossless import KeyframeScanCancelled, read_keyframes, render_lossless
 from ..render import RenderCancelled, render
 from ..segments import Segment
+from ..swap_audio import swap_audio
 
 AUDIO_PHASE = 0.85  # share of the analysis progress bar; keyframe scan gets the rest
 
@@ -93,6 +94,21 @@ class RenderWorker(_CancellableWorker):
         return str(out)
 
 
+class SwapAudioWorker(_CancellableWorker):
+    finished_ok = pyqtSignal(object)  # SwapResult
+
+    def __init__(self, video_path: str, audio_path: str, out_path: str) -> None:
+        super().__init__()
+        self._video_path = video_path
+        self._audio_path = audio_path
+        self._out_path = out_path
+
+    def run(self) -> None:
+        self._guarded(self._swap, (RenderCancelled,))
+
+    def _swap(self):
+        return swap_audio(self._video_path, self._audio_path, self._out_path,
+                          on_progress=self.progress.emit, is_cancelled=self._is_cancelled)
 class AudioExportWorker(_CancellableWorker):
     finished_ok = pyqtSignal(object)  # output path as str
 

@@ -39,8 +39,9 @@ try:
     from .waveform_timeline import WaveformTimeline as Timeline
 except ImportError:  # pyqtgraph missing: simpler painted timeline
     from .timeline import TimelineWidget as Timeline
-from .workers import AnalysisWorker, AudioExportWorker, MediaAnalysis, RenderWorker
+from .workers import AnalysisWorker, AudioExportWorker, MediaAnalysis, RenderWorker, SwapAudioWorker
 
+AUDIO_FILTER = "Audio files (*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus);;All files (*)"
 VIDEO_FILTER = "Media files (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.mp3 *.wav *.m4a)"
 DEFAULTS = DetectionSettings()
 
@@ -167,6 +168,12 @@ class MainWindow(QMainWindow):
         self.btn_export_audio.clicked.connect(self._choose_audio_output)
         bottom.addWidget(self.progress, 1)
         bottom.addWidget(self.btn_cancel)
+        self.btn_swap_audio = QPushButton("Swap audio…")
+        self.btn_swap_audio.setToolTip(
+            "Replace this video's soundtrack with another audio file (for example a "
+            "cleaned-up recording). The picture is copied untouched.")
+        self.btn_swap_audio.clicked.connect(self._choose_swap_audio)
+        bottom.addWidget(self.btn_swap_audio)
         bottom.addWidget(self.btn_export_audio)
         bottom.addWidget(self.btn_export)
         layout.addLayout(bottom)
@@ -208,6 +215,35 @@ class MainWindow(QMainWindow):
         worker = RenderWorker(self._input_path, out, self._result.keep, lossless=lossless)
         self._start(worker, self._on_render_done, "Exporting…")
 
+    def _choose_swap_audio(self) -> None:
+        if self._input_path is None or not self._has_video():
+            return
+        audio, _ = QFileDialog.getOpenFileName(
+            self, "Choose the clean audio", "", AUDIO_FILTER)
+        if not audio:
+            return
+        src = Path(self._input_path)
+        suffix = src.suffix or ".mp4"
+        suggested = str(src.with_name(f"{src.stem}_clean_audio{suffix}"))
+        out, _ = QFileDialog.getSaveFileName(
+            self, "Save video with new audio", suggested, f"Same as source (*{suffix})")
+        if not out:
+            return
+        if not Path(out).suffix:
+            out += suffix
+        worker = SwapAudioWorker(self._input_path, audio, out)
+        self._start(worker, self._on_swap_done, "Swapping audio…")
+
+    def _on_swap_done(self, result) -> None:
+        self._finish(f"Saved {result.output}")
+        message = f"Saved to:\n{result.output}"
+        if result.length_warning:
+            message += f"\n\n{result.length_warning}"
+        QMessageBox.information(self, "Audio swapped", message)
+
+    def _has_video(self) -> bool:
+        # The keyframe scan finds keyframes only when there is a video track.
+        return self._profile is not None and self._keyframes_ms.size > 0
     def _choose_audio_output(self) -> None:
         if self._input_path is None or self._profile is None:
             return
@@ -315,6 +351,7 @@ class MainWindow(QMainWindow):
         self.btn_export.setEnabled(
             not busy and self._result is not None and bool(self._result.keep)
         )
+        self.btn_swap_audio.setEnabled(not busy and self._has_video())
         # A finished analysis means the file has an audio track to extract.
         self.btn_export_audio.setEnabled(not busy and self._profile is not None)
 

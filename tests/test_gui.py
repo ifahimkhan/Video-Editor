@@ -137,6 +137,40 @@ def test_threaded_analysis_then_lossless_export(app, gop_media, tmp_path, monkey
     w.close()
 
 
+def test_swap_audio_button_replaces_soundtrack(app, window, tmp_path, monkeypatch):
+    import subprocess
+
+    from silence_remover.ffmpeg_tools import probe
+
+    assert window.btn_swap_audio.isEnabled()
+    clean = tmp_path / "clean.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                    "sine=frequency=880:duration=12", str(clean)], check=True)
+    out = tmp_path / "swapped"                                  # no extension typed
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName",
+                        lambda *a, **k: (str(clean), ""))
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName",
+                        lambda *a, **k: (str(out), ""))
+    shown = []
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information",
+                        lambda *a, **k: shown.append(a[2]))
+    window._choose_swap_audio()
+    assert not window.btn_swap_audio.isEnabled()                # busy while swapping
+    _wait_idle(window, app)
+    result = out.with_suffix(".mp4")
+    info = probe(result)
+    assert info.has_video and info.has_audio
+    assert shown and str(result) in shown[0]
+    assert window.btn_swap_audio.isEnabled()
+
+
+def test_swap_audio_disabled_for_audio_only_files(app, tmp_path):
+    clip = tmp_path / "voice.m4a"
+    make_clip(clip, 2, [], video=False)
+    w = MainWindow()
+    w._input_path = str(clip)
+    w._on_analysis_done(MediaAnalysis(analyze(clip), read_keyframes(clip)))
+    assert not w.btn_swap_audio.isEnabled()
 def test_export_audio_button_saves_mp3(app, window, tmp_path, monkeypatch):
     from silence_remover.ffmpeg_tools import probe
 
