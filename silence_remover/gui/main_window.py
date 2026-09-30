@@ -39,7 +39,7 @@ try:
     from .waveform_timeline import WaveformTimeline as Timeline
 except ImportError:  # pyqtgraph missing: simpler painted timeline
     from .timeline import TimelineWidget as Timeline
-from .workers import AnalysisWorker, MediaAnalysis, RenderWorker, SwapAudioWorker, AudioExportWorker
+from .workers import AnalysisWorker, AudioExportWorker, MediaAnalysis, RenderWorker, SwapAudioWorker
 
 AUDIO_FILTER = "Audio files (*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus);;All files (*)"
 VIDEO_FILTER = "Media files (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.mp3 *.wav *.m4a)"

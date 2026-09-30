@@ -179,3 +179,20 @@ def test_cli_swap_audio(tone_video, tmp_path, capsys):
     assert "Note: The new audio is" in capsys.readouterr().out
     assert cli.main([str(tone_video), str(tmp_path / "y.mp4"),
                      "--swap-audio", str(tmp_path / "missing.wav")]) == 1
+
+
+@requires_ffmpeg
+def test_cli_swap_output_keeps_new_audio_and_full_length(tone_video, tmp_path):
+    """Regression: after swapping, the CLI must stop, not continue into silence
+    removal (which overwrote OUTPUT with a cut copy of the original audio)."""
+    out = tmp_path / "swapped.mp4"
+    quiet = silence(tmp_path / "quiet.wav", 10)
+    assert cli.main([str(tone_video), str(out), "--swap-audio", str(quiet)]) == 0
+    assert probe(out).duration_s == pytest.approx(10.0, abs=0.1)
+    assert level_between(analyze(out, use_vad=False), 0.5, 9.5) < QUIET_DB
+
+
+def test_cli_rejects_extract_and_swap_together(tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        cli.main(["in.mp4", "out.mp3", "--extract-audio", "--swap-audio", "a.wav"])
+    assert exc.value.code == 2

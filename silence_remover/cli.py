@@ -37,17 +37,19 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lossless", action="store_true",
                    help="fast export without re-encoding; cuts start on keyframes, "
                         "so a little extra silence may remain")
-    p.add_argument("--extract-audio", action="store_true",
-                   help="save the full audio track of INPUT as MP3 to OUTPUT "
-                        "(no silence removal)")
+    # Each of these replaces silence removal with a different job.
+    audio_jobs = p.add_mutually_exclusive_group()
+    audio_jobs.add_argument("--extract-audio", action="store_true",
+                            help="save the full audio track of INPUT as MP3 to OUTPUT "
+                                 "(no silence removal)")
+    audio_jobs.add_argument("--swap-audio", metavar="AUDIO",
+                            help="replace INPUT's soundtrack with AUDIO and save to OUTPUT "
+                                 "(video copied untouched, no silence removal)")
     p.add_argument("--mp3-bitrate", type=int, default=DEFAULT_MP3_KBPS,
                    choices=MP3_BITRATES_KBPS, metavar="KBPS",
                    help=f"MP3 bitrate for --extract-audio (default {DEFAULT_MP3_KBPS})")
     p.add_argument("--dry-run", action="store_true",
                    help="only print what would be cut")
-    p.add_argument("--swap-audio", metavar="AUDIO",
-                   help="replace INPUT's soundtrack with AUDIO and save to OUTPUT "
-                        "(video copied untouched, no silence removal)")
     p.add_argument("--audio-offset", type=int, default=0, metavar="MS",
                    help="with --swap-audio: shift the new audio later (positive) "
                         "or earlier (negative), in ms (default 0)")
@@ -63,6 +65,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\nSaved {args.output}")
             if result.length_warning:
                 print(f"Note: {result.length_warning}")
+            return 0
         if args.extract_audio:
             extract_mp3(args.input, args.output, args.mp3_bitrate,
                         on_progress=_print_progress)

@@ -164,27 +164,16 @@ well. Screen recordings often have only one every 10 s or more, so use
 
 ```bash
 python -m silence_remover                          # no arguments: open the desktop app
-python -m silence_remover INPUT OUTPUT [options]   # remove silence (or extract audio)
+python -m silence_remover INPUT OUTPUT [options]   # remove silence, extract or swap audio
 python -m silence_remover -h                       # list all options
 ```
 
-| Option | Default | Description |
-|---|---|---|
-| `--mode {loudness,voice}` | `loudness` | Detection mode |
-| `-t, --threshold DB` | `-35` | Silence threshold in dBFS (loudness mode) |
-| `-v, --vad-threshold P` | `0.5` | Speech probability 0.05–0.95 (voice mode) |
-| `-m, --min-silence MS` | `500` | Minimum pause length to cut |
-| `-p, --padding MS` | `150` | Softness kept around speech |
-| `--lossless` | off | Fast export without re-encoding (cuts start on keyframes) |
-| `--dry-run` | off | Only report what would be cut |
-| `--swap-audio AUDIO` | | Replace INPUT's soundtrack with AUDIO and save to OUTPUT (video copied untouched, no silence removal) |
-| `--audio-offset MS` | `0` | With `--swap-audio`: shift the new audio later (positive) or earlier (negative), up to ±60000 ms |
 ### Arguments
 
 | Argument | Description |
 |---|---|
 | `INPUT` | Source video or audio file (mp4, mkv, mov, avi, webm, m4v, mp3, wav, m4a, …). |
-| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video, `.mp3` for `--extract-audio`. Required even with `--dry-run`, which never writes it. |
+| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video (use the source's extension with `--swap-audio`), `.mp3` for `--extract-audio`. Required even with `--dry-run`, which never writes it. |
 
 ### Options
 
@@ -200,9 +189,12 @@ python -m silence_remover -h                       # list all options
 | `--dry-run` | off | | Analyze and print what would be cut; write nothing. |
 | `--extract-audio` | off | | Save INPUT's full audio track as MP3 to OUTPUT. No silence removal, so the detection options, `--lossless` and `--dry-run` are ignored. |
 | `--mp3-bitrate KBPS` | `192` | 64, 96, 128, 160, 192, 256, 320 | MP3 bitrate for `--extract-audio`. |
+| `--swap-audio AUDIO` | | path to an audio file | Replace INPUT's soundtrack with AUDIO and save to OUTPUT. The video is copied untouched and no silence is removed, so the detection options, `--lossless` and `--dry-run` are ignored. |
+| `--audio-offset MS` | `0` | −60000 to 60000 | With `--swap-audio`: shift the new audio later (positive) or earlier (negative). |
 
 `-t` only applies in loudness mode and `-v` only in voice mode; the other
-detection options apply to both.
+detection options apply to both. `--extract-audio` and `--swap-audio` are
+separate jobs and can't be combined.
 
 ### Examples
 
@@ -242,7 +234,8 @@ Get-ChildItem *.mp4 | ForEach-Object { python -m silence_remover $_ "cut_$($_.Na
 The exit code is `0` on success and `1` on errors. Errors include invalid
 settings, a missing file, a file without audio, everything being below the
 threshold, and voice mode without `onnxruntime`. An unknown option or an
-out-of-list `--mp3-bitrate` makes argparse print usage and exit with `2`.
+out-of-list `--mp3-bitrate`, or combining `--extract-audio` with `--swap-audio`,
+makes argparse print usage and exit with `2`.
 
 ---
 
@@ -312,8 +305,7 @@ tests/
 ## Development
 
 ```bash
-python -m pytest -q                            # 94 tests
-python -m pytest -q                            # 85 tests
+python -m pytest -q                            # 105 tests
 python -m pytest -q --cov=silence_remover      # with coverage (~88%)
 ruff check .                                   # lint (config in ruff.toml)
 ```
