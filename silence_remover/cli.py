@@ -10,6 +10,7 @@ from .ffmpeg_tools import FFmpegError
 from .lossless import read_keyframes, render_lossless, snap_result
 from .render import render
 from .segments import DetectionMode, DetectionSettings, detect
+from .swap_audio import swap_audio
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,12 +38,25 @@ def build_parser() -> argparse.ArgumentParser:
                         "so a little extra silence may remain")
     p.add_argument("--dry-run", action="store_true",
                    help="only print what would be cut")
+    p.add_argument("--swap-audio", metavar="AUDIO",
+                   help="replace INPUT's soundtrack with AUDIO and save to OUTPUT "
+                        "(video copied untouched, no silence removal)")
+    p.add_argument("--audio-offset", type=int, default=0, metavar="MS",
+                   help="with --swap-audio: shift the new audio later (positive) "
+                        "or earlier (negative), in ms (default 0)")
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.swap_audio:
+            result = swap_audio(args.input, args.swap_audio, args.output,
+                                offset_ms=args.audio_offset, on_progress=_print_progress)
+            print(f"\nSaved {args.output}")
+            if result.length_warning:
+                print(f"Note: {result.length_warning}")
+            return 0
         settings = DetectionSettings(
             threshold_db=args.threshold, min_silence_ms=args.min_silence,
             padding_ms=args.padding, mode=args.mode, vad_threshold=args.vad_threshold,
