@@ -5,19 +5,35 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QComboBox, QFileDialog, QGridLayout, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
-    QProgressBar, QPushButton, QSlider, QSpinBox, QVBoxLayout, QWidget,
+    QComboBox,
+    QFileDialog,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ..segments import (
-    MIN_SILENCE_RANGE_MS, PADDING_RANGE_MS, THRESHOLD_RANGE_DB, VAD_THRESHOLD_RANGE,
-    DetectionMode, DetectionSettings, detect,
-)
 from ..lossless import snap_result
+from ..segments import (
+    MIN_SILENCE_RANGE_MS,
+    PADDING_RANGE_MS,
+    THRESHOLD_RANGE_DB,
+    VAD_THRESHOLD_RANGE,
+    DetectionMode,
+    DetectionSettings,
+    detect,
+)
 from ..vad import vad_available
+
 try:
     from .waveform_timeline import WaveformTimeline as Timeline
 except ImportError:  # pyqtgraph missing: simpler painted timeline
@@ -96,7 +112,8 @@ class MainWindow(QMainWindow):
             self.mode.setToolTip("Voice detection needs onnxruntime and the Silero model.")
         self.mode.currentIndexChanged.connect(self._on_mode_changed)
         vad_low, vad_high = (int(v * 100) for v in VAD_THRESHOLD_RANGE)
-        self.vad_threshold = SliderSpin(vad_low, vad_high, int(DEFAULTS.vad_threshold * 100), " %", 5)
+        self.vad_threshold = SliderSpin(
+            vad_low, vad_high, int(DEFAULTS.vad_threshold * 100), " %", 5)
         self.threshold = SliderSpin(*THRESHOLD_RANGE_DB, int(DEFAULTS.threshold_db), " dB")
         self.min_silence = SliderSpin(*MIN_SILENCE_RANGE_MS, DEFAULTS.min_silence_ms, " ms", 50)
         self.padding = SliderSpin(*PADDING_RANGE_MS, DEFAULTS.padding_ms, " ms", 10)
@@ -114,7 +131,8 @@ class MainWindow(QMainWindow):
              "How sure the model must be that audio is speech. Lower keeps more."),
             ("Threshold", self.threshold, "Audio quieter than this is treated as silence."),
             ("Minimum silence", self.min_silence, "Only pauses at least this long are cut."),
-            ("Softness (padding)", self.padding, "Extra audio kept around speech so words aren't clipped."),
+            ("Softness (padding)", self.padding,
+             "Extra audio kept around speech so words aren't clipped."),
             ("Export", self.export_mode,
              "Lossless copies the original video untouched and is much faster, but each "
              "kept part must start on a keyframe, so a little extra silence may remain."),
@@ -172,7 +190,8 @@ class MainWindow(QMainWindow):
         lossless = self._lossless()
         # Stream copy keeps the source codecs, so the source container is safest.
         suffix = (src.suffix or ".mp4") if lossless else ".mp4"
-        filters = f"Same as source (*{suffix});;MKV (*.mkv)" if lossless else "MP4 (*.mp4);;MKV (*.mkv)"
+        first_filter = f"Same as source (*{suffix})" if lossless else "MP4 (*.mp4)"
+        filters = f"{first_filter};;MKV (*.mkv)"
         suggested = str(src.with_name(f"{src.stem}_trimmed{suffix}"))
         out, chosen = QFileDialog.getSaveFileName(self, "Export", suggested, filters)
         if not out:

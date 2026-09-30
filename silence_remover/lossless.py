@@ -22,7 +22,11 @@ from typing import Callable
 import numpy as np
 
 from .ffmpeg_tools import (
-    CREATE_NO_WINDOW, FFmpegError, find_binary, probe, require_ffmpeg_version,
+    CREATE_NO_WINDOW,
+    FFmpegError,
+    find_binary,
+    probe,
+    require_ffmpeg_version,
 )
 from .render import MP4_LIKE, RenderCancelled, run_with_progress
 from .segments import DetectionResult, Segment
@@ -158,7 +162,7 @@ def render_lossless(
     with tempfile.TemporaryDirectory(prefix="silence_remover_") as tmp:
         files = [Path(tmp) / f"seg{i:05d}{suffix}" for i in range(len(keep))]
         commands = [segment_command(input_path, seg, f, info.has_video, info.has_audio)
-                    for seg, f in zip(keep, files)]
+                    for seg, f in zip(keep, files, strict=True)]
         _run_parallel(commands, on_progress, is_cancelled)
 
         list_path = Path(tmp) / "list.ffconcat"

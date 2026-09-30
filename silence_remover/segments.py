@@ -149,7 +149,7 @@ def _runs(mask: np.ndarray) -> list[tuple[int, int]]:
     padded = np.concatenate(([False], mask, [False])).astype(np.int8)
     edges = np.diff(padded)
     return list(zip(np.flatnonzero(edges == 1).tolist(),
-                    np.flatnonzero(edges == -1).tolist()))
+                    np.flatnonzero(edges == -1).tolist(), strict=True))
 
 
 def _silent_runs(silent: np.ndarray, frame_ms: int) -> tuple[Segment, ...]:

@@ -18,11 +18,19 @@ from PyQt6.QtWidgets import QVBoxLayout, QWidget
 
 from ..analysis import LoudnessProfile
 from ..segments import (
-    THRESHOLD_RANGE_DB, VAD_THRESHOLD_RANGE, DetectionMode, DetectionResult,
+    THRESHOLD_RANGE_DB,
+    VAD_THRESHOLD_RANGE,
+    DetectionMode,
+    DetectionResult,
     DetectionSettings,
 )
 from .waveform_data import (
-    cut_steps, db_to_height, decimate_max, format_time, height_to_db, time_axis,
+    cut_steps,
+    db_to_height,
+    decimate_max,
+    format_time,
+    height_to_db,
+    time_axis,
 )
 
 BACKGROUND = (30, 30, 34)

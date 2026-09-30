@@ -1,7 +1,11 @@
 import pytest
 
 from silence_remover.segments import (
-    DetectionSettings, Segment, detect, invert, pad_and_merge,
+    DetectionSettings,
+    Segment,
+    detect,
+    invert,
+    pad_and_merge,
 )
 
 from .conftest import make_profile

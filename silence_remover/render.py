@@ -19,7 +19,11 @@ from pathlib import Path
 from typing import Callable
 
 from .ffmpeg_tools import (
-    CREATE_NO_WINDOW, FFmpegError, find_binary, probe, require_ffmpeg_version,
+    CREATE_NO_WINDOW,
+    FFmpegError,
+    find_binary,
+    probe,
+    require_ffmpeg_version,
 )
 from .segments import Segment, invert
 
@@ -38,6 +42,9 @@ class EncoderSettings:
     preset: str = "fast"
     audio_codec: str = "aac"
     audio_bitrate: str = "192k"
+
+
+DEFAULT_ENCODER = EncoderSettings()
 
 
 def build_filter_graph(
@@ -73,7 +80,7 @@ def render(
     input_path: str | Path,
     output_path: str | Path,
     keep: tuple[Segment, ...],
-    encoder: EncoderSettings = EncoderSettings(),
+    encoder: EncoderSettings = DEFAULT_ENCODER,
     on_progress: Callable[[float], None] | None = None,
     is_cancelled: Callable[[], bool] | None = None,
 ) -> Path:

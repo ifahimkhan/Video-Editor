@@ -1,5 +1,7 @@
 # Silence Remover
 
+[![CI](https://github.com/ifahimkhan/Video-Editor/actions/workflows/ci.yml/badge.svg)](https://github.com/ifahimkhan/Video-Editor/actions/workflows/ci.yml)
+
 Automatically cut silent parts out of videos and audio recordings. Similar to
 Filmora's *Silence Detection*, with a live waveform preview, neural voice
 detection, and a fast lossless export.
@@ -236,10 +238,14 @@ tests/
 ```bash
 python -m pytest -q                            # 74 tests
 python -m pytest -q --cov=silence_remover      # with coverage (~88%)
+ruff check .                                   # lint (config in ruff.toml)
 ```
 
 - The integration tests generate their own clips with FFmpeg and are skipped if
   FFmpeg is missing.
+- CI (`.github/workflows/ci.yml`) runs lint plus the tests on Ubuntu (Python
+  3.10, 3.12, 3.13) and Windows (3.12), with a static FFmpeg 9.0 build and an
+  80% coverage gate.
 - The GUI tests run offscreen (`QT_QPA_PLATFORM=offscreen`), so no display is
   needed.
 - The tests cover:

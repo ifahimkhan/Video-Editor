@@ -9,10 +9,19 @@ import pytest
 from silence_remover import cli
 from silence_remover.analysis import analyze
 from silence_remover.segments import (
-    DetectionMode, DetectionSettings, Segment, detect, voice_mask,
+    DetectionMode,
+    DetectionSettings,
+    Segment,
+    detect,
+    voice_mask,
 )
 from silence_remover.vad import (
-    MODEL_ENV_VAR, WINDOW_SAMPLES, SileroVad, VadUnavailable, load_vad, vad_available,
+    MODEL_ENV_VAR,
+    WINDOW_SAMPLES,
+    SileroVad,
+    VadUnavailable,
+    load_vad,
+    vad_available,
 )
 
 from .conftest import make_profile, requires_ffmpeg

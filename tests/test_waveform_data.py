@@ -3,7 +3,12 @@ import pytest
 
 from silence_remover.analysis import frames_to_peak_db
 from silence_remover.gui.waveform_data import (
-    DISPLAY_FLOOR_DB, cut_steps, db_to_height, decimate_max, format_time, height_to_db,
+    DISPLAY_FLOOR_DB,
+    cut_steps,
+    db_to_height,
+    decimate_max,
+    format_time,
+    height_to_db,
     time_axis,
 )
 from silence_remover.segments import THRESHOLD_RANGE_DB, Segment

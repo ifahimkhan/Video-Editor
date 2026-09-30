@@ -8,8 +8,12 @@ import pytest
 from silence_remover import cli
 from silence_remover.analysis import analyze
 from silence_remover.lossless import (
-    _parse_packet_line, build_concat_list, read_keyframes, render_lossless,
-    snap_result, snap_to_keyframes,
+    _parse_packet_line,
+    build_concat_list,
+    read_keyframes,
+    render_lossless,
+    snap_result,
+    snap_to_keyframes,
 )
 from silence_remover.render import RenderCancelled
 from silence_remover.segments import DetectionResult, DetectionSettings, Segment, detect
