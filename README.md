@@ -1,6 +1,7 @@
 # Video Editor
 
 [![CI](https://github.com/ifahimkhan/Video-Editor/actions/workflows/ci.yml/badge.svg)](https://github.com/ifahimkhan/Video-Editor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A desktop video editor for spoken-word videos (talks, podcasts, tutorials,
 lectures and vlogs), built in Python on FFmpeg. It focuses on the edits that
@@ -366,6 +367,9 @@ silence_remover/
 tests/
   fixtures/speech.flac    short synthetic speech clip for VAD tests
 ROADMAP.md                planned features and how we add them
+CONTRIBUTING.md           how to set up, code conventions, PR checklist
+LICENSE                   MIT
+THIRD_PARTY_NOTICES.md    licenses of bundled and required components
 ```
 
 ---
@@ -427,3 +431,21 @@ ruff check .                                   # lint (config in ruff.toml)
   [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT license).
 - [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) and
   [pyqtgraph](https://www.pyqtgraph.org/) for the GUI.
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for their licenses.
+
+---
+
+## Contributing
+
+Contributions are very welcome, whether that's code, bug reports, testing on
+your own videos, or ideas. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then
+pick an issue. Those labelled
+[`good first issue`](https://github.com/ifahimkhan/Video-Editor/labels/good%20first%20issue)
+are small and self-contained.
+
+## License
+
+[MIT](LICENSE) © 2026 ifahimkhan and Video Editor contributors. Bundled and
+required third-party components keep their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
