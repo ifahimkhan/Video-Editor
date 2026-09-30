@@ -9,6 +9,7 @@ import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..analysis import AnalysisCancelled, LoudnessProfile, analyze
+from ..audio_export import extract_mp3
 from ..ffmpeg_tools import FFmpegError
 from ..lossless import KeyframeScanCancelled, read_keyframes, render_lossless
 from ..render import RenderCancelled, render
@@ -89,4 +90,22 @@ class RenderWorker(_CancellableWorker):
         export = render_lossless if self._lossless else render
         out = export(self._in_path, self._out_path, self._keep,
                      on_progress=self.progress.emit, is_cancelled=self._is_cancelled)
+        return str(out)
+
+
+class AudioExportWorker(_CancellableWorker):
+    finished_ok = pyqtSignal(object)  # output path as str
+
+    def __init__(self, in_path: str, out_path: str, bitrate_kbps: int) -> None:
+        super().__init__()
+        self._in_path = in_path
+        self._out_path = out_path
+        self._bitrate_kbps = bitrate_kbps
+
+    def run(self) -> None:
+        self._guarded(self._export, (RenderCancelled,))
+
+    def _export(self) -> str:
+        out = extract_mp3(self._in_path, self._out_path, self._bitrate_kbps,
+                          on_progress=self.progress.emit, is_cancelled=self._is_cancelled)
         return str(out)

@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ..audio_export import DEFAULT_MP3_KBPS
 from ..lossless import snap_result
 from ..segments import (
     MIN_SILENCE_RANGE_MS,
@@ -38,7 +39,7 @@ try:
     from .waveform_timeline import WaveformTimeline as Timeline
 except ImportError:  # pyqtgraph missing: simpler painted timeline
     from .timeline import TimelineWidget as Timeline
-from .workers import AnalysisWorker, MediaAnalysis, RenderWorker
+from .workers import AnalysisWorker, AudioExportWorker, MediaAnalysis, RenderWorker
 
 VIDEO_FILTER = "Media files (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.mp3 *.wav *.m4a)"
 DEFAULTS = DetectionSettings()
@@ -159,8 +160,14 @@ class MainWindow(QMainWindow):
         self.btn_cancel.clicked.connect(self._cancel)
         self.btn_export = QPushButton("Export…")
         self.btn_export.clicked.connect(self._choose_output)
+        self.btn_export_audio = QPushButton("Export audio (MP3)…")
+        self.btn_export_audio.setToolTip(
+            f"Save the full original audio track as MP3 ({DEFAULT_MP3_KBPS} kbps). "
+            "Silence cuts are not applied.")
+        self.btn_export_audio.clicked.connect(self._choose_audio_output)
         bottom.addWidget(self.progress, 1)
         bottom.addWidget(self.btn_cancel)
+        bottom.addWidget(self.btn_export_audio)
         bottom.addWidget(self.btn_export)
         layout.addLayout(bottom)
 
@@ -200,6 +207,22 @@ class MainWindow(QMainWindow):
             out += ".mkv" if "mkv" in chosen.lower() else suffix
         worker = RenderWorker(self._input_path, out, self._result.keep, lossless=lossless)
         self._start(worker, self._on_render_done, "Exporting…")
+
+    def _choose_audio_output(self) -> None:
+        if self._input_path is None or self._profile is None:
+            return
+        src = Path(self._input_path)
+        suggested = str(src.with_suffix(".mp3"))
+        out, _ = QFileDialog.getSaveFileName(self, "Export audio", suggested, "MP3 audio (*.mp3)")
+        if not out:
+            return
+        if Path(out).suffix.lower() != ".mp3":
+            out += ".mp3"
+        if Path(out).resolve() == src.resolve():
+            self._show_error("Choose a different file name than the source.")
+            return
+        worker = AudioExportWorker(self._input_path, out, DEFAULT_MP3_KBPS)
+        self._start(worker, self._on_render_done, "Exporting audio…")
 
     def _cancel(self) -> None:
         if self._worker is not None:
@@ -292,6 +315,8 @@ class MainWindow(QMainWindow):
         self.btn_export.setEnabled(
             not busy and self._result is not None and bool(self._result.keep)
         )
+        # A finished analysis means the file has an audio track to extract.
+        self.btn_export_audio.setEnabled(not busy and self._profile is not None)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, "Silence Remover", message)
