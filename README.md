@@ -17,6 +17,7 @@ detection, and a fast lossless export.
   red cut regions update live.
 - **Two export modes:** *Precise* (frame-accurate re-encode) or *Fast lossless*
   (stream copy, no quality loss, done in seconds).
+- **Audio extractor:** save any video's full soundtrack as an MP3 in one click.
 - **GUI and CLI:** the same engine works from the command line for scripting and
   batch jobs.
 
@@ -79,6 +80,11 @@ python -m silence_remover talk.mp4 talk_cut.mp4 # command line, default settings
    `Original 12:04 → 9:31   removed 2:33 (21%) in 87 cuts`.
 3. **Pick an export mode** and click **Export…**. A progress bar shows the
    export, and **Cancel** stops it at any time.
+
+**Export audio (MP3)…** saves the video's complete original audio track as an
+MP3 (192 kbps, with title/artist tags copied). It works independently of the
+silence settings: nothing is cut. The button becomes available once a file has
+been analyzed.
 
 ### Controls
 
@@ -145,24 +151,47 @@ well. Screen recordings often have only one every 10 s or more, so use
 ## Command line
 
 ```bash
-python -m silence_remover INPUT OUTPUT [options]
+python -m silence_remover                          # no arguments: open the desktop app
+python -m silence_remover INPUT OUTPUT [options]   # remove silence (or extract audio)
+python -m silence_remover -h                       # list all options
 ```
 
-| Option | Default | Description |
-|---|---|---|
-| `--mode {loudness,voice}` | `loudness` | Detection mode |
-| `-t, --threshold DB` | `-35` | Silence threshold in dBFS (loudness mode) |
-| `-v, --vad-threshold P` | `0.5` | Speech probability 0.05–0.95 (voice mode) |
-| `-m, --min-silence MS` | `500` | Minimum pause length to cut |
-| `-p, --padding MS` | `150` | Softness kept around speech |
-| `--lossless` | off | Fast export without re-encoding (cuts start on keyframes) |
-| `--dry-run` | off | Only report what would be cut |
+### Arguments
 
-Examples:
+| Argument | Description |
+|---|---|
+| `INPUT` | Source video or audio file (mp4, mkv, mov, avi, webm, m4v, mp3, wav, m4a, …). |
+| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video, `.mp3` for `--extract-audio`. Required even with `--dry-run`, which never writes it. |
+
+### Options
+
+| Option | Default | Allowed values | Description |
+|---|---|---|---|
+| `-h, --help` | | | Show the help text and exit. |
+| `--mode {loudness,voice}` | `loudness` | `loudness`, `voice` | Detection mode. `voice` uses Silero VAD and needs `onnxruntime`. |
+| `-t, --threshold DB` | `-35` | −70 to −10 | Loudness mode: audio quieter than this (dBFS) is silence. |
+| `-v, --vad-threshold P` | `0.5` | 0.05 to 0.95 | Voice mode: speech probability above which audio counts as speech. |
+| `-m, --min-silence MS` | `500` | 50 to 5000 | Only pauses at least this long (ms) are cut. |
+| `-p, --padding MS` | `150` | 0 to 1000 | Softness: audio kept (ms) before and after speech. |
+| `--lossless` | off | | Fast export without re-encoding; each kept part starts on a keyframe. |
+| `--dry-run` | off | | Analyze and print what would be cut; write nothing. |
+| `--extract-audio` | off | | Save INPUT's full audio track as MP3 to OUTPUT. No silence removal, so the detection options, `--lossless` and `--dry-run` are ignored. |
+| `--mp3-bitrate KBPS` | `192` | 64, 96, 128, 160, 192, 256, 320 | MP3 bitrate for `--extract-audio`. |
+
+`-t` only applies in loudness mode and `-v` only in voice mode; the other
+detection options apply to both.
+
+### Examples
 
 ```bash
+# Defaults: loudness mode, -35 dB, 500 ms minimum silence, 150 ms padding
+python -m silence_remover talk.mp4 talk_cut.mp4
+
 # Report what would be cut, without writing anything
 python -m silence_remover lecture.mp4 out.mp4 --dry-run
+
+# Quiet room: stricter threshold, keep more around words
+python -m silence_remover podcast.mp4 podcast_cut.mp4 -t -40 -p 250
 
 # Noisy recording: detect speech instead of loudness
 python -m silence_remover vlog.mp4 vlog_cut.mp4 --mode voice -v 0.4
@@ -170,12 +199,21 @@ python -m silence_remover vlog.mp4 vlog_cut.mp4 --mode voice -v 0.4
 # Fast, lossless, with tighter pauses
 python -m silence_remover interview.mov interview_cut.mov --lossless -m 300
 
+# Everything at once
+python -m silence_remover in.mp4 out.mp4 --mode voice -v 0.6 -m 400 -p 200 --lossless
+
+# Extract the soundtrack as MP3 (default 192 kbps, or choose one)
+python -m silence_remover lecture.mp4 lecture.mp3 --extract-audio
+python -m silence_remover lecture.mp4 lecture.mp3 --extract-audio --mp3-bitrate 320
+
 # Batch a folder (PowerShell)
 Get-ChildItem *.mp4 | ForEach-Object { python -m silence_remover $_ "cut_$($_.Name)" --lossless }
 ```
 
-The exit code is `0` on success and `1` on errors, such as invalid settings, a
-missing file, or everything being below the threshold.
+The exit code is `0` on success and `1` on errors. Errors include invalid
+settings, a missing file, a file without audio, everything being below the
+threshold, and voice mode without `onnxruntime`. An unknown option or an
+out-of-list `--mp3-bitrate` makes argparse print usage and exit with `2`.
 
 ---
 
@@ -226,6 +264,7 @@ silence_remover/
   segments.py      silence detection (pure functions)
   render.py        precise export (re-encode) with progress and cancel
   lossless.py      keyframe scan, snapping, stream-copy export
+  audio_export.py  full audio track to MP3 (libmp3lame)
   models/
     silero_vad_v6.onnx
   gui/
@@ -243,7 +282,7 @@ tests/
 ## Development
 
 ```bash
-python -m pytest -q                            # 74 tests
+python -m pytest -q                            # 85 tests
 python -m pytest -q --cov=silence_remover      # with coverage (~88%)
 ruff check .                                   # lint (config in ruff.toml)
 ```
