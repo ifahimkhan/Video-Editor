@@ -171,4 +171,25 @@ def test_swap_audio_disabled_for_audio_only_files(app, tmp_path):
     w._input_path = str(clip)
     w._on_analysis_done(MediaAnalysis(analyze(clip), read_keyframes(clip)))
     assert not w.btn_swap_audio.isEnabled()
+def test_export_audio_button_saves_mp3(app, window, tmp_path, monkeypatch):
+    from silence_remover.ffmpeg_tools import probe
+
+    assert window.btn_export_audio.isEnabled()
+    out = tmp_path / "chosen_name"                 # no extension typed
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName",
+                        lambda *a, **k: (str(out), ""))
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *a, **k: None)
+    window._choose_audio_output()
+    assert not window.btn_export_audio.isEnabled()  # busy while exporting
+    _wait_idle(window, app)
+    mp3 = out.with_suffix(".mp3")
+    assert mp3.exists()
+    info = probe(mp3)
+    assert info.has_audio and not info.has_video
+    assert window.btn_export_audio.isEnabled()
+
+
+def test_export_audio_disabled_until_file_analyzed(app):
+    w = MainWindow()
+    assert not w.btn_export_audio.isEnabled()
     w.close()

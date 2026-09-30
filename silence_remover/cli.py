@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from .analysis import analyze
+from .audio_export import DEFAULT_MP3_KBPS, MP3_BITRATES_KBPS, extract_mp3
 from .ffmpeg_tools import FFmpegError
 from .lossless import read_keyframes, render_lossless, snap_result
 from .render import render
@@ -36,6 +37,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--lossless", action="store_true",
                    help="fast export without re-encoding; cuts start on keyframes, "
                         "so a little extra silence may remain")
+    p.add_argument("--extract-audio", action="store_true",
+                   help="save the full audio track of INPUT as MP3 to OUTPUT "
+                        "(no silence removal)")
+    p.add_argument("--mp3-bitrate", type=int, default=DEFAULT_MP3_KBPS,
+                   choices=MP3_BITRATES_KBPS, metavar="KBPS",
+                   help=f"MP3 bitrate for --extract-audio (default {DEFAULT_MP3_KBPS})")
     p.add_argument("--dry-run", action="store_true",
                    help="only print what would be cut")
     p.add_argument("--swap-audio", metavar="AUDIO",
@@ -56,6 +63,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\nSaved {args.output}")
             if result.length_warning:
                 print(f"Note: {result.length_warning}")
+        if args.extract_audio:
+            extract_mp3(args.input, args.output, args.mp3_bitrate,
+                        on_progress=_print_progress)
+            print(f"\nSaved {args.output}")
             return 0
         settings = DetectionSettings(
             threshold_db=args.threshold, min_silence_ms=args.min_silence,
