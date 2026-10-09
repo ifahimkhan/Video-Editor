@@ -193,3 +193,50 @@ def test_export_audio_disabled_until_file_analyzed(app):
     w = MainWindow()
     assert not w.btn_export_audio.isEnabled()
     w.close()
+
+
+def test_remove_echo_button_saves_clean_audio(app, tmp_path, monkeypatch):
+    import numpy as np
+
+    from silence_remover.ffmpeg_tools import probe
+
+    from .test_echo_removal import SPEECH, add_echo, decode, encode
+
+    echoed = encode(tmp_path / "echoed.wav", add_echo(0.5 * np.tile(decode(SPEECH)[0], 2)))
+    w = MainWindow()
+    w._input_path = str(echoed)
+    w._on_analysis_done(MediaAnalysis(analyze(echoed), read_keyframes(echoed)))
+    assert w.btn_remove_echo.isEnabled()
+    out = tmp_path / "no_echo"                         # no extension typed
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName",
+                        lambda *a, **k: (str(out), ""))
+    shown = []
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information",
+                        lambda *a, **k: shown.append(a[2]))
+    w._choose_remove_echo()
+    assert not w.btn_remove_echo.isEnabled()           # busy while cleaning
+    _wait_idle(w, app)
+    mp3 = out.with_suffix(".mp3")
+    assert probe(mp3).has_audio
+    assert shown and "Echo found at 26." in shown[0] and str(mp3) in shown[0]
+    assert w.btn_remove_echo.isEnabled()
+    w.close()
+
+
+def test_remove_echo_reports_audio_without_echo(app, window, tmp_path, monkeypatch):
+    out = tmp_path / "x.mp3"
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName",
+                        lambda *a, **k: (str(out), ""))
+    errors = []
+    monkeypatch.setattr(QtWidgets.QMessageBox, "critical",
+                        lambda *a, **k: errors.append(a[2]))
+    window._choose_remove_echo()
+    _wait_idle(window, app)
+    assert errors and "No echo" in errors[0]
+    assert not out.exists()
+
+
+def test_remove_echo_disabled_until_file_analyzed(app):
+    w = MainWindow()
+    assert not w.btn_remove_echo.isEnabled()
+    w.close()

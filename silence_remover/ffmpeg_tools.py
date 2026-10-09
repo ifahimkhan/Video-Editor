@@ -25,6 +25,7 @@ class MediaInfo:
     duration_s: float
     has_video: bool
     has_audio: bool
+    audio_channels: int = 0  # of the first audio track
 
 
 def find_binary(name: str) -> str:
@@ -64,7 +65,7 @@ def probe(media_path: str | Path) -> MediaInfo:
 
     cmd = [
         find_binary("ffprobe"), "-v", "error",
-        "-show_entries", "format=duration:stream=codec_type",
+        "-show_entries", "format=duration:stream=codec_type,channels",
         "-of", "json", str(path),
     ]
     result = subprocess.run(
@@ -79,9 +80,12 @@ def probe(media_path: str | Path) -> MediaInfo:
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise FFmpegError(f"Could not read media duration of {path.name}") from exc
 
-    stream_types = {s.get("codec_type") for s in data.get("streams", [])}
+    streams = data.get("streams", [])
+    stream_types = {s.get("codec_type") for s in streams}
+    audio = [s for s in streams if s.get("codec_type") == "audio"]
     return MediaInfo(
         duration_s=duration_s,
         has_video="video" in stream_types,
-        has_audio="audio" in stream_types,
+        has_audio=bool(audio),
+        audio_channels=int(audio[0].get("channels") or 0) if audio else 0,
     )

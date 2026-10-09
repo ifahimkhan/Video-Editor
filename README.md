@@ -1,6 +1,7 @@
 # Video Editor
 
 [![CI](https://github.com/ifahimkhan/Video-Editor/actions/workflows/ci.yml/badge.svg)](https://github.com/ifahimkhan/Video-Editor/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 A desktop video editor for spoken-word videos (talks, podcasts, tutorials,
 lectures and vlogs), built in Python on FFmpeg. It focuses on the edits that
@@ -30,6 +31,7 @@ length is cut.*
 | [**Silence removal**](#silence-removal) | Cuts pauses and dead air automatically, by loudness or by AI voice detection. Frame-accurate or lossless export. | **Export…** | `INPUT OUTPUT [options]` |
 | [**Extract audio**](#extract-audio) | Saves a video's full soundtrack as an MP3. | **Export audio (MP3)…** | `--extract-audio` |
 | [**Swap audio**](#swap-audio) | Replaces a video's soundtrack with another file, such as a cleaned-up recording. The picture is copied untouched. | **Swap audio…** | `--swap-audio AUDIO` |
+| [**Remove echo**](#remove-echo) | Removes the doubled-voice echo you get when two microphones record you at once, and saves the cleaned audio. | **Remove echo…** | `--remove-echo` |
 
 Across all tools:
 
@@ -40,7 +42,7 @@ Across all tools:
   the window never freezes.
 - **GUI and CLI:** every tool also works from the command line, for scripting
   and batch jobs.
-- **Tested:** 105 automated tests, run on Windows and Linux in CI.
+- **Tested:** 138 automated tests, run on Windows and Linux in CI.
 
 ### Coming next
 
@@ -200,24 +202,44 @@ mp3, m4a, aac, flac, ogg or opus), then where to save.
   `--audio-offset` shifts it. A GUI control is planned
   ([#4](https://github.com/ifahimkhan/Video-Editor/issues/4)).
 
+### Remove echo
+
+When two inputs record your voice at once (for example a USB mic and a webcam
+mic both enabled in the recorder), the second one adds a delayed copy of your
+voice, usually 10–200 ms later, and you sound doubled or echoey.
+**Remove echo…** finds that delay and subtracts the copy, then saves the audio
+as MP3, WAV, FLAC or M4A.
+
+- Nothing to set: the delay and the second mic's sound are measured
+  automatically, every 10 seconds, so a delay that slowly drifts (two devices
+  on slightly different clocks) is followed.
+- Parts without echo are left untouched. A file with no echo at all is
+  reported and nothing is written.
+- It works on the audio track only. For a video, use **Swap audio…** afterwards
+  to put the cleaned audio back on the picture.
+- It removes the doubled voice, not room reverb or background noise. The
+  second copy must be quieter than your direct voice; if it is about as loud,
+  the echo is reduced rather than removed.
+
 ---
 
 ## Command line
 
 ```bash
 python -m silence_remover                          # no arguments: open the editor
-python -m silence_remover INPUT OUTPUT [options]   # remove silence, extract or swap audio
+python -m silence_remover INPUT OUTPUT [options]   # remove silence, extract or swap audio, remove echo
 python -m silence_remover -h                       # list all options
 ```
 
-Without `--extract-audio` or `--swap-audio`, the command removes silence.
+Without `--extract-audio`, `--swap-audio` or `--remove-echo`, the command
+removes silence.
 
 ### Arguments
 
 | Argument | Description |
 |---|---|
 | `INPUT` | Source video or audio file (mp4, mkv, mov, avi, webm, m4v, mp3, wav, m4a, …). |
-| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video (use the source's extension with `--swap-audio`), `.mp3` for `--extract-audio`. Required even with `--dry-run`, which never writes it. |
+| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video (use the source's extension with `--swap-audio`), `.mp3` for `--extract-audio`, `.mp3`/`.wav`/`.flac`/`.m4a` for `--remove-echo`. Required even with `--dry-run`, which never writes it. |
 
 ### Options
 
@@ -238,10 +260,12 @@ Without `--extract-audio` or `--swap-audio`, the command removes silence.
 | **Swap audio** | | | |
 | `--swap-audio AUDIO` | | path to an audio file | Replace INPUT's soundtrack with AUDIO and save to OUTPUT. The video is copied untouched and no silence is removed, so the silence-removal options are ignored. |
 | `--audio-offset MS` | `0` | −60000 to 60000 | With `--swap-audio`: shift the new audio later (positive) or earlier (negative). |
+| **Remove echo** | | | |
+| `--remove-echo` | off | | Remove the doubled-voice echo from INPUT's audio and save the audio to OUTPUT. Prints the delay found. No silence removal, so the silence-removal options are ignored. |
 
 `-t` only applies in loudness mode and `-v` only in voice mode; the other
-silence-removal options apply to both. `--extract-audio` and `--swap-audio`
-are separate jobs and can't be combined.
+silence-removal options apply to both. `--extract-audio`, `--swap-audio` and
+`--remove-echo` are separate jobs and can't be combined.
 
 ### Examples
 
@@ -274,6 +298,10 @@ python -m silence_remover talk.mp4 talk_clean.mp4 --swap-audio talk_clean.wav
 # ...and shift it 120 ms later if it runs ahead of the picture
 python -m silence_remover talk.mp4 talk_clean.mp4 --swap-audio talk_clean.wav --audio-offset 120
 
+# Two mics recorded at once: remove the echo, then put the audio back on the video
+python -m silence_remover talk.mp4 talk_no_echo.wav --remove-echo
+python -m silence_remover talk.mp4 talk_fixed.mp4 --swap-audio talk_no_echo.wav
+
 # Batch a folder (PowerShell)
 Get-ChildItem *.mp4 | ForEach-Object { python -m silence_remover $_ "cut_$($_.Name)" --lossless }
 ```
@@ -281,9 +309,10 @@ Get-ChildItem *.mp4 | ForEach-Object { python -m silence_remover $_ "cut_$($_.Na
 The exit code is `0` on success and `1` on errors. Errors include invalid
 settings, a missing file, a file without the needed audio or video track,
 everything being below the threshold, and voice mode without `onnxruntime`.
-An unknown option, an out-of-list `--mp3-bitrate`, or combining
-`--extract-audio` with `--swap-audio` makes argparse print usage and exit
-with `2`.
+With `--remove-echo`, a file with no echo is also an error. An unknown
+option, an out-of-list `--mp3-bitrate`, or combining two of
+`--extract-audio`, `--swap-audio` and `--remove-echo` makes argparse print
+usage and exit with `2`.
 
 ---
 
@@ -338,6 +367,35 @@ input ──ffmpeg──▶ 16 kHz mono PCM stream
   output at the video's duration, so the result always matches the picture.
   An offset shifts the audio with `adelay` (later) or `atrim` (earlier).
 
+### Remove echo
+
+Two mics mixed together give `x = s + h ∗ s(t − D)`: the voice plus a delayed,
+filtered copy. The tool undoes that in two streamed passes, so memory stays
+low on long files.
+
+```
+pass 1, every 10 s window (48 kHz mono):
+   cepstrum below 8 kHz ──▶ echo delay D and strength (peak ≥ 0.05 = echo)
+   LPC pre-whitening ──▶ least squares ──▶ echo filter h, ±1.5 ms around D
+   gain capped at 0.95 per frequency, so the inverse filter stays stable
+   windows whose D jumps > 0.5 ms from their neighbours are dropped (pitch)
+
+pass 2:  y[n] = x[n] − Σ h[k] · y[n − lag0 − k]   (h blended between windows)
+         run in blocks of lag0 samples with FFT convolution ──▶ encoder
+```
+
+- **Why the cepstrum:** an echo multiplies the spectrum by a ripple whose
+  period is 1/D; the log turns it into an additive term that shows up as a
+  sharp peak at D.
+- **Why pre-whitening:** speech is loud in the lows and quiet in the highs, so
+  the raw least-squares system is badly conditioned. It also turns the voice's
+  own pitch (which can repeat near the echo delay) into large filter errors.
+  Flattening the spectrum first fixes most of that.
+- **Why cap per frequency:** where the audio has no content (above an MP3's
+  cut-off), least squares leaves the filter's gain unconstrained, often near 1.
+  Scaling the whole filter down would weaken the cancellation where the voice
+  is.
+
 ---
 
 ## Project layout
@@ -354,6 +412,8 @@ silence_remover/
   lossless.py      keyframe scan, snapping, stream-copy export
   audio_export.py  extract audio: full audio track to MP3
   swap_audio.py    swap audio: replace the soundtrack, video stream-copied
+  echo_dsp.py      remove echo: detection and inverse filter (numpy only)
+  echo_removal.py  remove echo: two streamed ffmpeg passes around echo_dsp
   models/
     silero_vad_v6.onnx
   gui/
@@ -366,6 +426,9 @@ silence_remover/
 tests/
   fixtures/speech.flac    short synthetic speech clip for VAD tests
 ROADMAP.md                planned features and how we add them
+CONTRIBUTING.md           how to set up, code conventions, PR checklist
+LICENSE                   MIT
+THIRD_PARTY_NOTICES.md    licenses of bundled and required components
 ```
 
 ---
@@ -380,8 +443,8 @@ every planned feature, and each one has an
 small starting points.
 
 ```bash
-python -m pytest -q                            # 105 tests
-python -m pytest -q --cov=silence_remover      # with coverage (~88%)
+python -m pytest -q                            # 138 tests
+python -m pytest -q --cov=silence_remover      # with coverage (~91%)
 ruff check .                                   # lint (config in ruff.toml)
 ```
 
@@ -398,6 +461,9 @@ ruff check .                                   # lint (config in ruff.toml)
   - Lossless output being bit-identical to the source and decoding without
     errors at every join
   - Swapped audio really replacing the soundtrack, with the picture untouched
+  - Echo removal on real speech and synthetic voices: the delay found, the
+    echo left after cleaning, a drifting delay, stability with a strong echo,
+    and audio without echo left alone
   - The full threaded GUI flow for every tool
 
 ---
@@ -427,3 +493,21 @@ ruff check .                                   # lint (config in ruff.toml)
   [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT license).
 - [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) and
   [pyqtgraph](https://www.pyqtgraph.org/) for the GUI.
+
+See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for their licenses.
+
+---
+
+## Contributing
+
+Contributions are very welcome, whether that's code, bug reports, testing on
+your own videos, or ideas. Start with [CONTRIBUTING.md](CONTRIBUTING.md), then
+pick an issue. Those labelled
+[`good first issue`](https://github.com/ifahimkhan/Video-Editor/labels/good%20first%20issue)
+are small and self-contained.
+
+## License
+
+[MIT](LICENSE) © 2026 ifahimkhan and Video Editor contributors. Bundled and
+required third-party components keep their own licenses; see
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

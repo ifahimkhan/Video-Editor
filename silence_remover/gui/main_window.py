@@ -39,8 +39,16 @@ try:
     from .waveform_timeline import WaveformTimeline as Timeline
 except ImportError:  # pyqtgraph missing: simpler painted timeline
     from .timeline import TimelineWidget as Timeline
-from .workers import AnalysisWorker, AudioExportWorker, MediaAnalysis, RenderWorker, SwapAudioWorker
+from .workers import (
+    AnalysisWorker,
+    AudioExportWorker,
+    MediaAnalysis,
+    RemoveEchoWorker,
+    RenderWorker,
+    SwapAudioWorker,
+)
 
+ECHO_OUTPUT_FILTER = "MP3 (*.mp3);;WAV (*.wav);;FLAC (*.flac);;M4A (*.m4a)"
 AUDIO_FILTER = "Audio files (*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus);;All files (*)"
 VIDEO_FILTER = "Media files (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.mp3 *.wav *.m4a)"
 DEFAULTS = DetectionSettings()
@@ -174,6 +182,12 @@ class MainWindow(QMainWindow):
             "cleaned-up recording). The picture is copied untouched.")
         self.btn_swap_audio.clicked.connect(self._choose_swap_audio)
         bottom.addWidget(self.btn_swap_audio)
+        self.btn_remove_echo = QPushButton("Remove echo…")
+        self.btn_remove_echo.setToolTip(
+            "Remove the echo of a voice recorded by two microphones at once, and save "
+            "the cleaned audio. Use Swap audio to put it back into the video.")
+        self.btn_remove_echo.clicked.connect(self._choose_remove_echo)
+        bottom.addWidget(self.btn_remove_echo)
         bottom.addWidget(self.btn_export_audio)
         bottom.addWidget(self.btn_export)
         layout.addLayout(bottom)
@@ -241,9 +255,34 @@ class MainWindow(QMainWindow):
             message += f"\n\n{result.length_warning}"
         QMessageBox.information(self, "Audio swapped", message)
 
+    def _choose_remove_echo(self) -> None:
+        if self._input_path is None or self._profile is None:
+            return
+        src = Path(self._input_path)
+        suggested = str(src.with_name(f"{src.stem}_no_echo.mp3"))
+        out, chosen = QFileDialog.getSaveFileName(
+            self, "Save audio without echo", suggested, ECHO_OUTPUT_FILTER)
+        if not out:
+            return
+        if not Path(out).suffix:
+            out += "." + (chosen.split("(*.")[1].rstrip(")") if "(*." in chosen else "mp3")
+        if Path(out).resolve() == src.resolve():
+            self._show_error("Choose a different file name than the source.")
+            return
+        worker = RemoveEchoWorker(self._input_path, out)
+        self._start(worker, self._on_echo_removed, "Removing echo…")
+
+    def _on_echo_removed(self, result) -> None:
+        self._finish(f"Saved {result.output}")
+        message = f"{result.summary}\n\nSaved to:\n{result.output}"
+        if self._has_video():
+            message += "\n\nTo use it in the video, click Swap audio… and pick this file."
+        QMessageBox.information(self, "Echo removed", message)
+
     def _has_video(self) -> bool:
         # The keyframe scan finds keyframes only when there is a video track.
         return self._profile is not None and self._keyframes_ms.size > 0
+
     def _choose_audio_output(self) -> None:
         if self._input_path is None or self._profile is None:
             return
@@ -354,6 +393,7 @@ class MainWindow(QMainWindow):
         self.btn_swap_audio.setEnabled(not busy and self._has_video())
         # A finished analysis means the file has an audio track to extract.
         self.btn_export_audio.setEnabled(not busy and self._profile is not None)
+        self.btn_remove_echo.setEnabled(not busy and self._profile is not None)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, "Silence Remover", message)

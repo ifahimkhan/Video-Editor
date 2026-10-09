@@ -7,6 +7,7 @@ import sys
 
 from .analysis import analyze
 from .audio_export import DEFAULT_MP3_KBPS, MP3_BITRATES_KBPS, extract_mp3
+from .echo_removal import remove_echo
 from .ffmpeg_tools import FFmpegError
 from .lossless import read_keyframes, render_lossless, snap_result
 from .render import render
@@ -45,6 +46,10 @@ def build_parser() -> argparse.ArgumentParser:
     audio_jobs.add_argument("--swap-audio", metavar="AUDIO",
                             help="replace INPUT's soundtrack with AUDIO and save to OUTPUT "
                                  "(video copied untouched, no silence removal)")
+    audio_jobs.add_argument("--remove-echo", action="store_true",
+                            help="remove the echo of a voice recorded by two microphones "
+                                 "at once; saves INPUT's audio to OUTPUT "
+                                 "(.mp3, .wav, .flac or .m4a, no silence removal)")
     p.add_argument("--mp3-bitrate", type=int, default=DEFAULT_MP3_KBPS,
                    choices=MP3_BITRATES_KBPS, metavar="KBPS",
                    help=f"MP3 bitrate for --extract-audio (default {DEFAULT_MP3_KBPS})")
@@ -65,6 +70,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\nSaved {args.output}")
             if result.length_warning:
                 print(f"Note: {result.length_warning}")
+            return 0
+        if args.remove_echo:
+            result = remove_echo(args.input, args.output, on_progress=_print_progress)
+            print(f"\n{result.summary}\nSaved {args.output}")
             return 0
         if args.extract_audio:
             extract_mp3(args.input, args.output, args.mp3_bitrate,

@@ -484,5 +484,6 @@ code.
 | Interactive pyqtgraph waveform with draggable thresholds and zoom | `gui/waveform_timeline.py` |
 | MP3 audio extractor | `audio_export.py` · PR #1 |
 | Swap audio (replace the soundtrack, video untouched) | `swap_audio.py` · PR #2 |
+| Remove echo (doubled voice from two microphones recording at once) | `echo_dsp.py`, `echo_removal.py` |
 | CLI covering every feature | `cli.py` |
 | CI: lint plus tests on Ubuntu and Windows, 80% coverage gate | `.github/workflows/ci.yml` |
