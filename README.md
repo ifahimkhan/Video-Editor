@@ -32,6 +32,7 @@ length is cut.*
 | [**Extract audio**](#extract-audio) | Saves a video's full soundtrack as an MP3. | **Export audio (MP3)…** | `--extract-audio` |
 | [**Swap audio**](#swap-audio) | Replaces a video's soundtrack with another file, such as a cleaned-up recording. The picture is copied untouched. | **Swap audio…** | `--swap-audio AUDIO` |
 | [**Remove echo**](#remove-echo) | Removes the doubled-voice echo you get when two microphones record you at once, and saves the cleaned audio. | **Remove echo…** | `--remove-echo` |
+| [**Export transcript**](#export-transcript) | Writes down what is said as subtitles (SRT/VTT) or plain text, in its own language or translated to English, with faster-whisper. | **Export transcript…** | `--transcript` |
 
 Across all tools:
 
@@ -42,7 +43,7 @@ Across all tools:
   the window never freezes.
 - **GUI and CLI:** every tool also works from the command line, for scripting
   and batch jobs.
-- **Tested:** 138 automated tests, run on Windows and Linux in CI.
+- **Tested:** 154 automated tests, run on Windows and Linux in CI.
 
 ### Coming next
 
@@ -92,6 +93,7 @@ pip install -r requirements.txt
 | `PyQt6` | the desktop app |
 | `pyqtgraph` | the interactive waveform (without it, the app uses a simpler static timeline) |
 | `onnxruntime` | AI voice detection (without it, only loudness detection is available) |
+| `faster-whisper` | Export transcript (without it, the button is greyed out) |
 | `pytest`, `pytest-cov`, `ruff` | development: tests and lint |
 
 ### 3. Run it
@@ -189,15 +191,18 @@ MP3 (192 kbps, with title/artist tags copied).
 
 **Swap audio…** replaces the video's soundtrack with another audio file, for
 example a version cleaned up in a noise-removal tool. Pick the new audio (wav,
-mp3, m4a, aac, flac, ogg or opus), then where to save.
+mp3, m4a, aac, flac, ogg or opus). If the timeline shows cuts, you're asked how
+to export: **Keep full video** (only the audio changes, the default) or **Also
+remove silence** (the cuts on the timeline are applied too). Then pick where to
+save.
 
 - The video stream is copied untouched (bit-identical, no quality loss); only
   the new audio is encoded (AAC 192 kbps, or Opus for `.webm`).
 - The result always has the video's length. Shorter audio is padded with
   silence and longer audio is trimmed, with a warning when the two differ by
   more than half a second.
-- No silence is removed. To also cut pauses, open the swapped video and remove
-  silence as usual.
+- With **Keep full video**, no silence is removed. From the command line,
+  `--swap-audio` always keeps the full video.
 - If the new audio is slightly out of sync, the command line's
   `--audio-offset` shifts it. A GUI control is planned
   ([#4](https://github.com/ifahimkhan/Video-Editor/issues/4)).
@@ -221,17 +226,38 @@ as MP3, WAV, FLAC or M4A.
   second copy must be quieter than your direct voice; if it is about as loud,
   the echo is reduced rather than removed.
 
+### Export transcript
+
+**Export transcript…** writes down what is said in the file with
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper). Choose the
+language first:
+
+- **Original language:** the words as spoken (the language is detected
+  automatically).
+- **Translate to English:** speech in any language is written in English.
+
+Then save as `.srt` or `.vtt` subtitles (with timings, ready for YouTube or a
+video player) or `.txt` plain text.
+
+- The whole file is transcribed; silence cuts are not applied. Whisper skips
+  pauses and music by itself.
+- The first run downloads the speech model (`medium`, about 1.5 GB). On the
+  command line, `--whisper-model` picks a smaller, faster model or the more
+  accurate `large-v3`.
+- It runs on the CPU. With an NVIDIA GPU and CUDA installed, set `USE_GPU=1`
+  before starting the app to use the GPU.
+
 ---
 
 ## Command line
 
 ```bash
 python -m silence_remover                          # no arguments: open the editor
-python -m silence_remover INPUT OUTPUT [options]   # remove silence, extract or swap audio, remove echo
+python -m silence_remover INPUT OUTPUT [options]   # remove silence, extract or swap audio, remove echo, transcribe
 python -m silence_remover -h                       # list all options
 ```
 
-Without `--extract-audio`, `--swap-audio` or `--remove-echo`, the command
+Without `--extract-audio`, `--swap-audio`, `--remove-echo` or `--transcript`, the command
 removes silence.
 
 ### Arguments
@@ -239,7 +265,7 @@ removes silence.
 | Argument | Description |
 |---|---|
 | `INPUT` | Source video or audio file (mp4, mkv, mov, avi, webm, m4v, mp3, wav, m4a, …). |
-| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video (use the source's extension with `--swap-audio`), `.mp3` for `--extract-audio`, `.mp3`/`.wav`/`.flac`/`.m4a` for `--remove-echo`. Required even with `--dry-run`, which never writes it. |
+| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video (use the source's extension with `--swap-audio`), `.mp3` for `--extract-audio`, `.mp3`/`.wav`/`.flac`/`.m4a` for `--remove-echo`, `.srt`/`.vtt`/`.txt` for `--transcript`. Required even with `--dry-run`, which never writes it. |
 
 ### Options
 
@@ -262,10 +288,14 @@ removes silence.
 | `--audio-offset MS` | `0` | −60000 to 60000 | With `--swap-audio`: shift the new audio later (positive) or earlier (negative). |
 | **Remove echo** | | | |
 | `--remove-echo` | off | | Remove the doubled-voice echo from INPUT's audio and save the audio to OUTPUT. Prints the delay found. No silence removal, so the silence-removal options are ignored. |
+| **Export transcript** | | | |
+| `--transcript` | off | | Write what is said in INPUT to OUTPUT (`.srt`, `.vtt` or `.txt`). Needs `faster-whisper`. No silence removal, so the silence-removal options are ignored. |
+| `--translate` | off | | With `--transcript`: translate the speech to English. |
+| `--whisper-model SIZE` | `medium` | `tiny`, `base`, `small`, `medium`, `large-v3` | With `--transcript`: speech model. Larger is more accurate but slower; each is downloaded on first use. |
 
 `-t` only applies in loudness mode and `-v` only in voice mode; the other
-silence-removal options apply to both. `--extract-audio`, `--swap-audio` and
-`--remove-echo` are separate jobs and can't be combined.
+silence-removal options apply to both. `--extract-audio`, `--swap-audio`,
+`--remove-echo` and `--transcript` are separate jobs and can't be combined.
 
 ### Examples
 
@@ -302,16 +332,21 @@ python -m silence_remover talk.mp4 talk_clean.mp4 --swap-audio talk_clean.wav --
 python -m silence_remover talk.mp4 talk_no_echo.wav --remove-echo
 python -m silence_remover talk.mp4 talk_fixed.mp4 --swap-audio talk_no_echo.wav
 
+# Subtitles in the spoken language, or translated to English
+python -m silence_remover talk.mp4 talk.srt --transcript
+python -m silence_remover talk.mp4 talk_english.srt --transcript --translate
+
 # Batch a folder (PowerShell)
 Get-ChildItem *.mp4 | ForEach-Object { python -m silence_remover $_ "cut_$($_.Name)" --lossless }
 ```
 
 The exit code is `0` on success and `1` on errors. Errors include invalid
 settings, a missing file, a file without the needed audio or video track,
-everything being below the threshold, and voice mode without `onnxruntime`.
+everything being below the threshold, voice mode without `onnxruntime`, and
+`--transcript` without `faster-whisper`.
 With `--remove-echo`, a file with no echo is also an error. An unknown
 option, an out-of-list `--mp3-bitrate`, or combining two of
-`--extract-audio`, `--swap-audio` and `--remove-echo` makes argparse print
+`--extract-audio`, `--swap-audio`, `--remove-echo` and `--transcript` makes argparse print
 usage and exit with `2`.
 
 ---
@@ -414,6 +449,7 @@ silence_remover/
   swap_audio.py    swap audio: replace the soundtrack, video stream-copied
   echo_dsp.py      remove echo: detection and inverse filter (numpy only)
   echo_removal.py  remove echo: two streamed ffmpeg passes around echo_dsp
+  transcript.py    export transcript: faster-whisper to SRT, VTT or text
   models/
     silero_vad_v6.onnx
   gui/
@@ -475,6 +511,7 @@ ruff check .                                   # lint (config in ruff.toml)
 | `'ffmpeg' not found on PATH` | Install FFmpeg and reopen the terminal. |
 | `FFmpeg 6 is too old` | Export needs FFmpeg 7+ (it uses `-/filter_complex <file>`). |
 | `The selected file has no audio track` | The editor needs an audio track to analyze a file. For a silent video, only Swap audio can add a soundtrack, and that currently runs from the command line only. |
+| Export transcript is greyed out | Install `faster-whisper` (`pip install faster-whisper`). |
 | Voice option is greyed out | Install `onnxruntime` and check that `silence_remover/models/silero_vad_v6.onnx` exists. |
 | Word beginnings or endings are clipped | Raise **Softness / padding**, or lower the threshold / voice sensitivity. |
 | Background noise isn't removed | Switch to **Voice** detection. |
@@ -491,6 +528,8 @@ ruff check .                                   # lint (config in ruff.toml)
 - [Silero VAD](https://github.com/snakers4/silero-vad) (MIT license). The
   bundled ONNX file is the v6 export distributed with
   [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT license).
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT license)
+  and OpenAI's Whisper models (MIT license) for transcripts.
 - [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) and
   [pyqtgraph](https://www.pyqtgraph.org/) for the GUI.
 

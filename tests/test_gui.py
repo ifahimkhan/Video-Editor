@@ -154,13 +154,49 @@ def test_swap_audio_button_replaces_soundtrack(app, window, tmp_path, monkeypatc
     shown = []
     monkeypatch.setattr(QtWidgets.QMessageBox, "information",
                         lambda *a, **k: shown.append(a[2]))
+    monkeypatch.setattr(window, "_ask_swap_trim", lambda: False)  # just swap
     window._choose_swap_audio()
     assert not window.btn_swap_audio.isEnabled()                # busy while swapping
     _wait_idle(window, app)
     result = out.with_suffix(".mp4")
     info = probe(result)
     assert info.has_video and info.has_audio
+    assert info.duration_s == pytest.approx(12, abs=0.2)        # silence kept
     assert shown and str(result) in shown[0]
+    assert window.btn_swap_audio.isEnabled()
+
+
+def _swap_with_choice(app, window, tmp_path, monkeypatch, choice):
+    import subprocess
+
+    clean = tmp_path / "clean.wav"
+    subprocess.run(["ffmpeg", "-v", "error", "-f", "lavfi", "-i",
+                    "sine=frequency=880:duration=12", str(clean)], check=True)
+    out = tmp_path / "swapped.mp4"
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getOpenFileName",
+                        lambda *a, **k: (str(clean), ""))
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName",
+                        lambda *a, **k: (str(out), ""))
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(window, "_ask_swap_trim", lambda: choice)
+    window._choose_swap_audio()
+    _wait_idle(window, app)
+    return out
+
+
+def test_swap_audio_can_also_remove_silence(app, window, tmp_path, monkeypatch):
+    from silence_remover.ffmpeg_tools import probe
+
+    out = _swap_with_choice(app, window, tmp_path, monkeypatch, True)
+    info = probe(out)
+    assert info.has_video and info.has_audio
+    assert info.duration_s == pytest.approx(window._result.kept_ms / 1000, abs=0.3)
+    assert not list(tmp_path.glob("*.swap-tmp*"))               # temp file cleaned up
+
+
+def test_swap_audio_choice_cancelled_does_nothing(app, window, tmp_path, monkeypatch):
+    out = _swap_with_choice(app, window, tmp_path, monkeypatch, None)
+    assert not out.exists()
     assert window.btn_swap_audio.isEnabled()
 
 
@@ -240,3 +276,44 @@ def test_remove_echo_disabled_until_file_analyzed(app):
     w = MainWindow()
     assert not w.btn_remove_echo.isEnabled()
     w.close()
+
+
+def test_transcript_button_saves_captions(app, window, tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from silence_remover import transcript
+
+    class FakeModel:
+        def transcribe(self, audio, **kwargs):
+            self.task = kwargs["task"]
+            info = SimpleNamespace(language="en", language_probability=0.9)
+            return iter([SimpleNamespace(start=0.5, end=2.0, text=" Hi.")]), info
+
+    model = FakeModel()
+    monkeypatch.setattr(transcript, "load_model", lambda size: model)
+    window._transcript_available = True
+    window._set_busy(False)
+    assert window.btn_transcript.isEnabled()
+    out = tmp_path / "talk"                                     # no extension typed
+    monkeypatch.setattr(window, "_ask_transcript_language", lambda: True)
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName",
+                        lambda *a, **k: (str(out), "Web subtitles (*.vtt)"))
+    shown = []
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information",
+                        lambda *a, **k: shown.append(a[2]))
+    window._choose_transcript()
+    assert not window.btn_transcript.isEnabled()                # busy while working
+    _wait_idle(window, app)
+    result = out.with_suffix(".vtt")
+    assert result.read_text(encoding="utf-8").startswith("WEBVTT")
+    assert model.task == "translate"
+    assert shown and str(result) in shown[0] and "1 captions" in shown[0]
+
+
+def test_transcript_cancelled_choice_does_nothing(app, window, monkeypatch):
+    monkeypatch.setattr(window, "_ask_transcript_language", lambda: None)
+    called = []
+    monkeypatch.setattr(QtWidgets.QFileDialog, "getSaveFileName",
+                        lambda *a, **k: called.append(1) or ("", ""))
+    window._choose_transcript()
+    assert not called and window._worker is None
