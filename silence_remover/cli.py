@@ -13,6 +13,12 @@ from .lossless import read_keyframes, render_lossless, snap_result
 from .render import render
 from .segments import DetectionMode, DetectionSettings, detect
 from .swap_audio import swap_audio
+from .transcript import (
+    DEFAULT_MODEL,
+    MODEL_SIZES,
+    TranscriptUnavailable,
+    transcribe,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,6 +56,14 @@ def build_parser() -> argparse.ArgumentParser:
                             help="remove the echo of a voice recorded by two microphones "
                                  "at once; saves INPUT's audio to OUTPUT "
                                  "(.mp3, .wav, .flac or .m4a, no silence removal)")
+    audio_jobs.add_argument("--transcript", action="store_true",
+                            help="write what is said in INPUT to OUTPUT (.srt, .vtt or "
+                                 ".txt) with faster-whisper (no silence removal)")
+    p.add_argument("--translate", action="store_true",
+                   help="with --transcript: translate the speech to English")
+    p.add_argument("--whisper-model", choices=MODEL_SIZES, default=DEFAULT_MODEL,
+                   help=f"with --transcript: speech model size (default {DEFAULT_MODEL}; "
+                        "larger is more accurate but slower)")
     p.add_argument("--mp3-bitrate", type=int, default=DEFAULT_MP3_KBPS,
                    choices=MP3_BITRATES_KBPS, metavar="KBPS",
                    help=f"MP3 bitrate for --extract-audio (default {DEFAULT_MP3_KBPS})")
@@ -70,6 +84,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"\nSaved {args.output}")
             if result.length_warning:
                 print(f"Note: {result.length_warning}")
+            return 0
+        if args.transcript:
+            result = transcribe(args.input, args.output, translate=args.translate,
+                                model_size=args.whisper_model,
+                                on_progress=_print_progress)
+            print(f"\n{result.summary}\nSaved {args.output}")
             return 0
         if args.remove_echo:
             result = remove_echo(args.input, args.output, on_progress=_print_progress)
@@ -107,7 +127,7 @@ def main(argv: list[str] | None = None) -> int:
         export(args.input, args.output, result.keep, on_progress=_print_progress)
         print(f"\nSaved {args.output}")
         return 0
-    except (FFmpegError, ValueError, OSError) as exc:
+    except (FFmpegError, ValueError, OSError, TranscriptUnavailable) as exc:
         print(f"\nError: {exc}", file=sys.stderr)
         return 1
 

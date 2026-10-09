@@ -33,6 +33,7 @@ from ..segments import (
     DetectionSettings,
     detect,
 )
+from ..transcript import DEFAULT_MODEL, transcript_available
 from ..vad import vad_available
 
 try:
@@ -46,9 +47,11 @@ from .workers import (
     RemoveEchoWorker,
     RenderWorker,
     SwapAudioWorker,
+    TranscriptWorker,
 )
 
-ECHO_OUTPUT_FILTER = "MP3 (*.mp3);;WAV (*.wav);;FLAC (*.flac);;M4A (*.m4a)"
+TRANSCRIPT_FILTER = "Subtitles (*.srt);;Web subtitles (*.vtt);;Plain text (*.txt)"
+ECHO_OUTPUT_FILTER ="MP3 (*.mp3);;WAV (*.wav);;FLAC (*.flac);;M4A (*.m4a)"
 AUDIO_FILTER = "Audio files (*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus);;All files (*)"
 VIDEO_FILTER = "Media files (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.mp3 *.wav *.m4a)"
 DEFAULTS = DetectionSettings()
@@ -188,6 +191,15 @@ class MainWindow(QMainWindow):
             "the cleaned audio. Use Swap audio to put it back into the video.")
         self.btn_remove_echo.clicked.connect(self._choose_remove_echo)
         bottom.addWidget(self.btn_remove_echo)
+        self._transcript_available = transcript_available()
+        self.btn_transcript = QPushButton("Export transcript…")
+        self.btn_transcript.setToolTip(
+            "Write down what is said, as subtitles (.srt/.vtt) or plain text, "
+            "in its own language or translated to English. Silence cuts are not "
+            "applied." if self._transcript_available else
+            "Transcripts need faster-whisper: pip install faster-whisper")
+        self.btn_transcript.clicked.connect(self._choose_transcript)
+        bottom.addWidget(self.btn_transcript)
         bottom.addWidget(self.btn_export_audio)
         bottom.addWidget(self.btn_export)
         layout.addLayout(bottom)
@@ -236,17 +248,47 @@ class MainWindow(QMainWindow):
             self, "Choose the clean audio", "", AUDIO_FILTER)
         if not audio:
             return
+        trim = self._ask_swap_trim()
+        if trim is None:
+            return
         src = Path(self._input_path)
         suffix = src.suffix or ".mp4"
-        suggested = str(src.with_name(f"{src.stem}_clean_audio{suffix}"))
+        name = f"{src.stem}_clean_audio{'_trimmed' if trim else ''}{suffix}"
         out, _ = QFileDialog.getSaveFileName(
-            self, "Save video with new audio", suggested, f"Same as source (*{suffix})")
+            self, "Save video with new audio", str(src.with_name(name)),
+            f"Same as source (*{suffix})")
         if not out:
             return
         if not Path(out).suffix:
             out += suffix
-        worker = SwapAudioWorker(self._input_path, audio, out)
+        keep = self._result.keep if trim else None
+        worker = SwapAudioWorker(self._input_path, audio, out, keep=keep,
+                                 lossless=self._lossless())
         self._start(worker, self._on_swap_done, "Swapping audio…")
+
+    def _ask_swap_trim(self) -> bool | None:
+        """Ask whether to also cut the silence: True/False, or None if cancelled."""
+        result = self._result
+        if result is None or not result.cuts or not result.keep:
+            return False  # nothing to cut, so just swap
+        box = QMessageBox(self)
+        box.setWindowTitle("Swap audio")
+        box.setText("How should the video be exported?")
+        box.setInformativeText(
+            "Keep full video: only the audio is replaced, nothing is cut.\n"
+            f"Also remove silence: apply the {len(self._result.cuts)} cuts shown "
+            "on the timeline as well.")
+        full = box.addButton("Keep full video", QMessageBox.ButtonRole.AcceptRole)
+        trim = box.addButton("Also remove silence", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(full)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is full:
+            return False
+        if clicked is trim:
+            return True
+        return None
 
     def _on_swap_done(self, result) -> None:
         self._finish(f"Saved {result.output}")
@@ -278,6 +320,50 @@ class MainWindow(QMainWindow):
         if self._has_video():
             message += "\n\nTo use it in the video, click Swap audio… and pick this file."
         QMessageBox.information(self, "Echo removed", message)
+
+    def _choose_transcript(self) -> None:
+        if self._input_path is None or self._profile is None:
+            return
+        translate = self._ask_transcript_language()
+        if translate is None:
+            return
+        src = Path(self._input_path)
+        suggested = str(src.with_name(f"{src.stem}{'_english' if translate else ''}.srt"))
+        out, chosen = QFileDialog.getSaveFileName(
+            self, "Save transcript", suggested, TRANSCRIPT_FILTER)
+        if not out:
+            return
+        if not Path(out).suffix:
+            out += "." + (chosen.split("(*.")[1].rstrip(")") if "(*." in chosen else "srt")
+        worker = TranscriptWorker(self._input_path, out, translate)
+        self._start(worker, self._on_transcript_done,
+                    f"Transcribing… (the first run downloads the '{DEFAULT_MODEL}' "
+                    "speech model, about 1.5 GB)")
+
+    def _ask_transcript_language(self) -> bool | None:
+        """True to translate to English, False to keep the language, None if cancelled."""
+        box = QMessageBox(self)
+        box.setWindowTitle("Export transcript")
+        box.setText("Which language should the transcript be in?")
+        box.setInformativeText(
+            "Original language: write down the words as spoken.\n"
+            "Translate to English: speech in any language is written in English.")
+        original = box.addButton("Original language", QMessageBox.ButtonRole.AcceptRole)
+        english = box.addButton("Translate to English", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton(QMessageBox.StandardButton.Cancel)
+        box.setDefaultButton(original)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is original:
+            return False
+        if clicked is english:
+            return True
+        return None
+
+    def _on_transcript_done(self, result) -> None:
+        self._finish(f"Saved {result.output}")
+        QMessageBox.information(self, "Transcript saved",
+                                f"{result.summary}\n\nSaved to:\n{result.output}")
 
     def _has_video(self) -> bool:
         # The keyframe scan finds keyframes only when there is a video track.
@@ -394,6 +480,8 @@ class MainWindow(QMainWindow):
         # A finished analysis means the file has an audio track to extract.
         self.btn_export_audio.setEnabled(not busy and self._profile is not None)
         self.btn_remove_echo.setEnabled(not busy and self._profile is not None)
+        self.btn_transcript.setEnabled(
+            not busy and self._profile is not None and self._transcript_available)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, "Silence Remover", message)

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import Path
 
 import numpy as np
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -16,8 +17,10 @@ from ..lossless import KeyframeScanCancelled, read_keyframes, render_lossless
 from ..render import RenderCancelled, render
 from ..segments import Segment
 from ..swap_audio import swap_audio
+from ..transcript import TranscriptCancelled, TranscriptUnavailable, transcribe
 
 AUDIO_PHASE = 0.85  # share of the analysis progress bar; keyframe scan gets the rest
+SWAP_PHASE = 0.4  # share of the swap-and-trim progress bar; the cut gets the rest
 
 
 @dataclass(frozen=True)
@@ -47,7 +50,7 @@ class _CancellableWorker(QThread):
             result = job()
         except cancelled_types:
             self.cancelled.emit()
-        except (FFmpegError, OSError, ValueError) as exc:
+        except (FFmpegError, OSError, ValueError, TranscriptUnavailable) as exc:
             self.failed.emit(str(exc))
         except Exception as exc:  # an escaped exception would abort the app
             self.failed.emit(f"Unexpected error: {exc!r}")
@@ -96,20 +99,44 @@ class RenderWorker(_CancellableWorker):
 
 
 class SwapAudioWorker(_CancellableWorker):
+    """Swap the soundtrack; with `keep`, also cut the silence afterwards."""
+
     finished_ok = pyqtSignal(object)  # SwapResult
 
-    def __init__(self, video_path: str, audio_path: str, out_path: str) -> None:
+    def __init__(self, video_path: str, audio_path: str, out_path: str,
+                 keep: tuple[Segment, ...] | None = None, lossless: bool = False) -> None:
         super().__init__()
         self._video_path = video_path
         self._audio_path = audio_path
         self._out_path = out_path
+        self._keep = keep
+        self._lossless = lossless
 
     def run(self) -> None:
         self._guarded(self._swap, (RenderCancelled,))
 
     def _swap(self):
-        return swap_audio(self._video_path, self._audio_path, self._out_path,
-                          on_progress=self.progress.emit, is_cancelled=self._is_cancelled)
+        if self._keep is None:
+            return swap_audio(self._video_path, self._audio_path, self._out_path,
+                              on_progress=self.progress.emit,
+                              is_cancelled=self._is_cancelled)
+        return self._swap_and_trim()
+
+    def _swap_and_trim(self):
+        out = Path(self._out_path)
+        # The swap copies the video stream, so the cut points still line up.
+        tmp = out.with_name(f"{out.stem}.swap-tmp{out.suffix}")
+        try:
+            result = swap_audio(self._video_path, self._audio_path, tmp,
+                                on_progress=lambda f: self.progress.emit(f * SWAP_PHASE),
+                                is_cancelled=self._is_cancelled)
+            export = render_lossless if self._lossless else render
+            export(tmp, out, self._keep,
+                   on_progress=lambda f: self.progress.emit(SWAP_PHASE + f * (1 - SWAP_PHASE)),
+                   is_cancelled=self._is_cancelled)
+        finally:
+            tmp.unlink(missing_ok=True)
+        return replace(result, output=out)
 
 
 class RemoveEchoWorker(_CancellableWorker):
@@ -126,6 +153,23 @@ class RemoveEchoWorker(_CancellableWorker):
     def _remove(self):
         return remove_echo(self._in_path, self._out_path,
                            on_progress=self.progress.emit, is_cancelled=self._is_cancelled)
+
+
+class TranscriptWorker(_CancellableWorker):
+    finished_ok = pyqtSignal(object)  # TranscriptResult
+
+    def __init__(self, in_path: str, out_path: str, translate: bool) -> None:
+        super().__init__()
+        self._in_path = in_path
+        self._out_path = out_path
+        self._translate = translate
+
+    def run(self) -> None:
+        self._guarded(self._transcribe, (TranscriptCancelled,))
+
+    def _transcribe(self):
+        return transcribe(self._in_path, self._out_path, translate=self._translate,
+                          on_progress=self.progress.emit, is_cancelled=self._is_cancelled)
 
 
 class AudioExportWorker(_CancellableWorker):
