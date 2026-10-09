@@ -10,6 +10,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from ..analysis import AnalysisCancelled, LoudnessProfile, analyze
 from ..audio_export import extract_mp3
+from ..echo_removal import remove_echo
 from ..ffmpeg_tools import FFmpegError
 from ..lossless import KeyframeScanCancelled, read_keyframes, render_lossless
 from ..render import RenderCancelled, render
@@ -109,6 +110,24 @@ class SwapAudioWorker(_CancellableWorker):
     def _swap(self):
         return swap_audio(self._video_path, self._audio_path, self._out_path,
                           on_progress=self.progress.emit, is_cancelled=self._is_cancelled)
+
+
+class RemoveEchoWorker(_CancellableWorker):
+    finished_ok = pyqtSignal(object)  # EchoResult
+
+    def __init__(self, in_path: str, out_path: str) -> None:
+        super().__init__()
+        self._in_path = in_path
+        self._out_path = out_path
+
+    def run(self) -> None:
+        self._guarded(self._remove, (RenderCancelled,))
+
+    def _remove(self):
+        return remove_echo(self._in_path, self._out_path,
+                           on_progress=self.progress.emit, is_cancelled=self._is_cancelled)
+
+
 class AudioExportWorker(_CancellableWorker):
     finished_ok = pyqtSignal(object)  # output path as str
 
