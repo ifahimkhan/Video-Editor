@@ -8,13 +8,25 @@ from enum import Enum
 LENGTH_RANGE_S = (5, 180)
 CLIP_COUNT_RANGE = (1, 10)
 SPLIT_RATIO_RANGE = (0.3, 0.8)
+CODE_ZOOM_RANGE = (1.0, 3.0)
 
 
 class Layout(str, Enum):
     FIT_BLUR = "fit-blur"        # whole video centred on a blurred copy of itself
     FIT_BARS = "fit-bars"        # whole video centred on black bars
     STATIC_CROP = "static-crop"  # fixed centre crop filling the canvas
-    SPLIT = "split"              # screen on top, webcam overlay on the bottom
+    SPLIT = "split"              # typing area on top, webcam on the bottom
+    SPEAKER = "speaker"          # crop follows the face in the webcam overlay
+    CODE = "code"                # crop follows where you are typing
+    AUTO = "auto"                # code while typing, speaker otherwise
+
+    @property
+    def tracked(self) -> bool:
+        """Needs face / typing analysis of the clip before rendering."""
+        return self in _TRACKED
+
+
+_TRACKED = frozenset({Layout.SPLIT, Layout.SPEAKER, Layout.CODE, Layout.AUTO})
 
 
 class Aspect(str, Enum):
@@ -82,8 +94,10 @@ class ReelSettings:
     min/max_length_s: allowed clip length when clips are picked automatically.
     clip_count:    how many clips to pick automatically.
     split_ratio:   SPLIT layout: share of the canvas height given to the screen.
-    webcam:        SPLIT layout: webcam overlay position in the source,
-                   or None to assume the bottom-right corner.
+    webcam:        webcam overlay position in the source, or None to find it
+                   automatically (bottom-right corner).
+    code_zoom:     CODE/SPLIT/AUTO: 1.0 shows the largest crop that fits,
+                   2.0 zooms in to half of that for bigger text.
     """
 
     layout: Layout = Layout.FIT_BLUR
@@ -93,6 +107,7 @@ class ReelSettings:
     clip_count: int = 3
     split_ratio: float = 0.6
     webcam: Rect | None = None
+    code_zoom: float = 1.0
 
     def __post_init__(self) -> None:
         # Accept plain strings ("split", "9:16") from the CLI or saved settings.
@@ -104,6 +119,7 @@ class ReelSettings:
             raise ValueError("min_length_s must not be longer than max_length_s.")
         _check_range("clip_count", self.clip_count, CLIP_COUNT_RANGE)
         _check_range("split_ratio", self.split_ratio, SPLIT_RATIO_RANGE)
+        _check_range("code_zoom", self.code_zoom, CODE_ZOOM_RANGE)
 
 
 def split_heights(canvas_h: int, ratio: float) -> tuple[int, int]:

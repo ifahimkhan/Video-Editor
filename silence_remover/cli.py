@@ -72,13 +72,17 @@ def build_parser() -> argparse.ArgumentParser:
                         f"{r.max_length_s}s, or the end of the video)")
     p.add_argument("--layout", choices=[m.value for m in Layout], default=r.layout.value,
                    help="with --reel: fit-blur/fit-bars show the whole video centred, "
-                        "static-crop fills the canvas, split puts the screen above "
-                        f"the webcam (default {r.layout.value})")
+                        "static-crop fills the canvas; speaker follows your face, code "
+                        "follows your typing, split shows typing above the webcam, auto "
+                        f"switches between code and speaker (default {r.layout.value})")
     p.add_argument("--aspect", choices=[a.value for a in Aspect], default=r.aspect.value,
                    help=f"with --reel: canvas shape (default {r.aspect.value})")
     p.add_argument("--webcam", metavar="X,Y,W,H", default=None,
-                   help="with --reel --layout split: webcam overlay position in pixels "
-                        "(default: bottom-right quarter)")
+                   help="with --reel: webcam overlay position in pixels "
+                        "(default: found automatically in the bottom-right corner)")
+    p.add_argument("--code-zoom", type=float, default=r.code_zoom,
+                   help="with --reel code/split/auto: zoom into the typing area, "
+                        f"1.0-3.0 (default {r.code_zoom})")
     p.add_argument("--split-ratio", type=float, default=r.split_ratio,
                    help=f"with --layout split: share of the height for the screen "
                         f"(default {r.split_ratio})")
@@ -160,6 +164,7 @@ def main(argv: list[str] | None = None) -> int:
 def _run_reel(args: argparse.Namespace) -> int:
     settings = ReelSettings(
         layout=args.layout, aspect=args.aspect, split_ratio=args.split_ratio,
+        code_zoom=args.code_zoom,
         webcam=Rect.parse(args.webcam) if args.webcam else None,
     )
     end_s = args.end

@@ -81,8 +81,8 @@ def test_split_heights_sum_to_canvas_and_are_even():
     assert top == 1152
 
 
-@pytest.mark.parametrize("layout", list(Layout))
-def test_every_layout_outputs_v_label_at_canvas_size(layout):
+@pytest.mark.parametrize("layout", [m for m in Layout if not m.tracked])
+def test_every_static_layout_outputs_v_label_at_canvas_size(layout):
     graph = build_layout_graph(1920, 1080, ReelSettings(layout=layout))
     assert graph.startswith("[0:v:0]")
     assert graph.rstrip().endswith("[v]")
@@ -103,6 +103,16 @@ def test_static_crop_uses_centre_crop():
     graph = build_layout_graph(1920, 1080, ReelSettings(layout=Layout.STATIC_CROP))
     assert "crop=608:1080:656:0" in graph
     assert "scale=1080:1920" in graph
+
+
+def test_tracked_layouts_are_flagged():
+    assert {m for m in Layout if m.tracked} == {
+        Layout.SPLIT, Layout.SPEAKER, Layout.CODE, Layout.AUTO}
+
+
+def test_code_zoom_range_is_checked():
+    with pytest.raises(ValueError):
+        ReelSettings(code_zoom=5)
 
 
 def test_split_stacks_screen_above_webcam():

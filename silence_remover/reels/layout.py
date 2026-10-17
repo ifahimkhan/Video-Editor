@@ -38,7 +38,11 @@ def default_webcam(src_w: int, src_h: int) -> Rect:
 
 
 def build_layout_graph(src_w: int, src_h: int, settings: ReelSettings) -> str:
-    """Filter graph turning the source picture into `[v]` at the canvas size."""
+    """Filter graph turning the source picture into `[v]` at the canvas size.
+
+    SPLIT here is the static version (fixed centre crop); tracked layouts
+    are built by `reels.motion`.
+    """
     if src_w <= 0 or src_h <= 0:
         raise ValueError("Could not read the video's picture size.")
     canvas_w, canvas_h = settings.aspect.size
@@ -49,6 +53,9 @@ def build_layout_graph(src_w: int, src_h: int, settings: ReelSettings) -> str:
         Layout.STATIC_CROP: lambda: _static_crop(frame, canvas_w, canvas_h),
         Layout.SPLIT: lambda: _split(frame, canvas_w, canvas_h, settings),
     }
+    if settings.layout not in builders:
+        raise ValueError(f"Layout '{settings.layout.value}' needs clip analysis; "
+                         "use reels.motion.build_tracked_graph.")
     return builders[settings.layout]()
 
 
