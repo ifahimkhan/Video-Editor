@@ -40,6 +40,7 @@ try:
     from .waveform_timeline import WaveformTimeline as Timeline
 except ImportError:  # pyqtgraph missing: simpler painted timeline
     from .timeline import TimelineWidget as Timeline
+from .reels_dialog import ReelsDialog
 from .workers import (
     AnalysisWorker,
     AudioExportWorker,
@@ -200,6 +201,13 @@ class MainWindow(QMainWindow):
             "Transcripts need faster-whisper: pip install faster-whisper")
         self.btn_transcript.clicked.connect(self._choose_transcript)
         bottom.addWidget(self.btn_transcript)
+        self.btn_reels = QPushButton("Create reels…")
+        self.btn_reels.setToolTip(
+            "Find the best 30-60 s moments and save them as vertical reels that follow "
+            "your face and typing, with captions." if self._transcript_available else
+            "Reels need the transcript: pip install faster-whisper")
+        self.btn_reels.clicked.connect(self._open_reels)
+        bottom.addWidget(self.btn_reels)
         bottom.addWidget(self.btn_export_audio)
         bottom.addWidget(self.btn_export)
         layout.addLayout(bottom)
@@ -365,6 +373,11 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Transcript saved",
                                 f"{result.summary}\n\nSaved to:\n{result.output}")
 
+    def _open_reels(self) -> None:
+        if self._input_path is None or not self._has_video():
+            return
+        ReelsDialog(self._input_path, self).exec()
+
     def _has_video(self) -> bool:
         # The keyframe scan finds keyframes only when there is a video track.
         return self._profile is not None and self._keyframes_ms.size > 0
@@ -482,6 +495,8 @@ class MainWindow(QMainWindow):
         self.btn_remove_echo.setEnabled(not busy and self._profile is not None)
         self.btn_transcript.setEnabled(
             not busy and self._profile is not None and self._transcript_available)
+        self.btn_reels.setEnabled(
+            not busy and self._has_video() and self._transcript_available)
 
     def _show_error(self, message: str) -> None:
         QMessageBox.critical(self, "Silence Remover", message)

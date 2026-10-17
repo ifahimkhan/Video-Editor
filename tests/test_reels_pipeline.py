@@ -184,3 +184,22 @@ def test_pauses_are_kept_unless_silence_removal_is_on(tmp_path, monkeypatch):
     reel = run.reels[0]
     assert reel.length_s == pytest.approx(reel.highlight.length_s)
     assert probe(reel.output).duration_s == pytest.approx(reel.highlight.length_s, abs=0.2)
+
+
+@requires_ffmpeg
+def test_render_reels_renders_only_chosen_picks_with_edited_titles(talk, tmp_path, whisper):
+    from silence_remover.reels.pipeline import prepare_reels, render_reels
+    prepared = prepare_reels(talk, SETTINGS, cache_dir=tmp_path)
+    assert len(prepared.picks) == 2
+    chosen = [dataclasses.replace(prepared.picks[1], title="My own title")]
+    run = render_reels(talk, tmp_path / "out", SETTINGS, prepared, chosen)
+    assert len(run.reels) == 1 and run.reels[0].output.name == "talk_reel01.mp4"
+    summary = json.loads(run.summary_path.read_text(encoding="utf-8"))
+    assert summary["clips"][0]["title"] == "My own title"
+
+
+def test_render_reels_without_picks_is_an_error(tmp_path):
+    from silence_remover.reels.pipeline import Prepared, render_reels
+    prepared = Prepared(transcript.SpeechTranscript((), "en", 1.0), None, [], "local")
+    with pytest.raises(ValueError):
+        render_reels(tmp_path / "v.mp4", tmp_path / "out", SETTINGS, prepared, [])

@@ -54,10 +54,13 @@ class ReelsRun:
 
 
 @dataclass(frozen=True)
-class _Prepared:
+class Prepared:
+    """Everything needed to render reels without transcribing or picking again."""
+
     speech: SpeechTranscript
     profile: LoudnessProfile
     picks: list[Highlight]
+    ranker: str
 
 
 def find_highlights(
@@ -72,8 +75,8 @@ def find_highlights(
     is_cancelled: Callable[[], bool] | None = None,
 ) -> list[Highlight]:
     """The best `settings.clip_count` moments of the video, in time order."""
-    return _prepare(Path(input_path), settings, ranker, model_size, cache_dir, gemini_model,
-                    client, on_progress, is_cancelled).picks
+    return prepare_reels(input_path, settings, ranker, model_size, cache_dir, gemini_model,
+                         client, on_progress, is_cancelled).picks
 
 
 def create_reels(
@@ -88,46 +91,78 @@ def create_reels(
     is_cancelled: Callable[[], bool] | None = None,
 ) -> ReelsRun:
     """Pick the best moments of `input_path` and save each as a reel in `out_dir`."""
-    input_path, out_dir = Path(input_path), Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
     report = on_progress or (lambda _f: None)
-    prep = _prepare(input_path, settings, ranker, model_size, out_dir, gemini_model,
-                    client, lambda f: report(PICK_SHARE * f), is_cancelled)
-    if not prep.picks:
+    prep = prepare_reels(input_path, settings, ranker, model_size, out_dir, gemini_model,
+                         client, lambda f: report(PICK_SHARE * f), is_cancelled)
+    return render_reels(input_path, out_dir, settings, prep,
+                        on_progress=lambda f: report(PICK_SHARE + f * (1 - PICK_SHARE)),
+                        is_cancelled=is_cancelled)
+
+
+def prepare_reels(
+    input_path: str | Path,
+    settings: ReelSettings,
+    ranker: str = "local",
+    model_size: str = DEFAULT_MODEL,
+    cache_dir: str | Path | None = None,
+    gemini_model: str | None = None,
+    client: JsonGenerator | None = None,
+    on_progress: Progress | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> Prepared:
+    """Transcribe (cached), measure loudness and pick the clips."""
+    return _prepare(Path(input_path), settings, ranker, model_size, cache_dir, gemini_model,
+                    client, on_progress, is_cancelled)
+
+
+def render_reels(
+    input_path: str | Path,
+    out_dir: str | Path,
+    settings: ReelSettings,
+    prepared: Prepared,
+    picks: list[Highlight] | None = None,
+    on_progress: Progress | None = None,
+    is_cancelled: Callable[[], bool] | None = None,
+) -> ReelsRun:
+    """Render `picks` (default: all prepared picks) as reels in `out_dir`."""
+    input_path, out_dir = Path(input_path), Path(out_dir)
+    picks = prepared.picks if picks is None else picks
+    if not picks:
         raise ValueError(
             f"No part of the video fits a {settings.min_length_s}-{settings.max_length_s} s "
             "clip of whole sentences. Try a shorter minimum length.")
-
+    out_dir.mkdir(parents=True, exist_ok=True)
+    report = on_progress or (lambda _f: None)
     if settings.layout.tracked and settings.webcam is None:
         # Find the webcam once for all clips instead of once per clip.
         webcam = resolve_webcam(input_path, probe(input_path), settings)
         settings = dataclasses.replace(settings, webcam=webcam)
-    keep_all = detect(prep.profile, REEL_SILENCE).keep if settings.remove_silence else None
+    keep_all = detect(prepared.profile, REEL_SILENCE).keep if settings.remove_silence else None
 
     results = []
-    share = (1 - PICK_SHARE) / len(prep.picks)
-    for i, pick in enumerate(prep.picks):
+    share = 1 / len(picks)
+    for i, pick in enumerate(picks):
         keep = clip_keep(keep_all, pick.start_s, pick.end_s) if keep_all is not None else None
         if keep == ():
             log.warning("Skipping %.1f-%.1f s: it is all silence.", pick.start_s, pick.end_s)
             continue
         out = out_dir / f"{input_path.stem}_reel{len(results) + 1:02d}.mp4"
-        base = PICK_SHARE + i * share
+        base = i * share
         render_reel(input_path, out, pick.start_s, pick.end_s, settings,
                     on_progress=lambda f, base=base: report(base + f * share),
-                    is_cancelled=is_cancelled, words=prep.speech.words, title=pick.title,
+                    is_cancelled=is_cancelled, words=prepared.speech.words, title=pick.title,
                     keep=keep)
         results.append(ReelResult(out, pick, _kept_length(pick, keep)))
 
-    summary = _write_summary(out_dir, input_path, results, ranker)
+    summary = _write_summary(out_dir, input_path, results, prepared.ranker)
     report(1.0)
-    return ReelsRun(tuple(results), summary, ranker)
+    return ReelsRun(tuple(results), summary, prepared.ranker)
 
 
 def _prepare(input_path: Path, settings: ReelSettings, ranker: str, model_size: str,
              cache_dir: str | Path | None, gemini_model: str | None,
              client: JsonGenerator | None, on_progress: Progress | None,
-             is_cancelled: Callable[[], bool] | None) -> _Prepared:
+             is_cancelled: Callable[[], bool] | None) -> Prepared:
     if ranker not in RANKERS:
         raise ValueError(f"Ranker must be one of {', '.join(RANKERS)}.")
     report = on_progress or (lambda _f: None)
@@ -149,7 +184,7 @@ def _prepare(input_path: Path, settings: ReelSettings, ranker: str, model_size: 
         picks = pick_local(captions, settings, duration_s, profile)
     _check(is_cancelled)
     report(1.0)
-    return _Prepared(speech, profile, picks)
+    return Prepared(speech, profile, picks, ranker)
 
 
 def _kept_length(pick: Highlight, keep: tuple[Segment, ...] | None) -> float:
