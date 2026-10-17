@@ -160,3 +160,12 @@ def test_cli_transcript(tone_clip, tmp_path, fake_model, capsys):
 def test_cli_transcript_bad_extension(tmp_path, fake_model):
     assert cli.main([str(tmp_path / "in.mp4"), str(tmp_path / "out.doc"),
                      "--transcript"]) == 1
+
+
+@requires_ffmpeg
+def test_speech_captions_returns_captions_without_writing(tone_clip, fake_model):
+    progress = []
+    speech = transcript.speech_captions(tone_clip, on_progress=progress.append)
+    assert speech.captions == (Caption(0.2, 1.8, " One."), Caption(2.0, 3.9, " Two."))
+    assert speech.language == "en"
+    assert progress[-1] == 1.0

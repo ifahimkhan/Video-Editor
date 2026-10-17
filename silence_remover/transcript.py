@@ -53,6 +53,13 @@ class Caption:
 
 
 @dataclass(frozen=True)
+class SpeechTranscript:
+    captions: tuple[Caption, ...]
+    language: str
+    language_probability: float
+
+
+@dataclass(frozen=True)
 class TranscriptResult:
     output: Path
     language: str
@@ -142,10 +149,30 @@ def transcribe(
                          + ", ".join(FORMATS))
     if model_size not in MODEL_SIZES:
         raise ValueError(f"Speech model must be one of {', '.join(MODEL_SIZES)}")
+    speech = speech_captions(input_path, translate, model_size, on_progress, is_cancelled)
+    _write_atomically(output_path, render_captions(speech.captions, suffix))
+    return TranscriptResult(output=output_path, language=speech.language,
+                            language_probability=speech.language_probability,
+                            captions=len(speech.captions), translated=translate)
+
+
+def speech_captions(
+    input_path: str | Path,
+    translate: bool = False,
+    model_size: str = DEFAULT_MODEL,
+    on_progress: Progress | None = None,
+    is_cancelled: Cancelled | None = None,
+) -> SpeechTranscript:
+    """Transcribe `input_path` into timed captions (one per spoken phrase).
+
+    Raises like `transcribe`, without writing anything.
+    """
+    if model_size not in MODEL_SIZES:
+        raise ValueError(f"Speech model must be one of {', '.join(MODEL_SIZES)}")
     report = on_progress or (lambda _f: None)
     cancelled = is_cancelled or (lambda: False)
 
-    audio = decode_audio(input_path)
+    audio = decode_audio(Path(input_path))
     _check(cancelled)
     report(DECODE_SHARE)
     model = load_model(model_size)
@@ -164,12 +191,8 @@ def transcribe(
         captions.append(Caption(segment.start, segment.end, segment.text))
         done = min(1.0, segment.end / duration_s)
         report(DECODE_SHARE + LOAD_SHARE + done * (1 - DECODE_SHARE - LOAD_SHARE))
-
-    _write_atomically(output_path, render_captions(captions, suffix))
     report(1.0)
-    return TranscriptResult(output=output_path, language=info.language,
-                            language_probability=info.language_probability,
-                            captions=len(captions), translated=translate)
+    return SpeechTranscript(tuple(captions), info.language, info.language_probability)
 
 
 def decode_audio(input_path: Path) -> np.ndarray:

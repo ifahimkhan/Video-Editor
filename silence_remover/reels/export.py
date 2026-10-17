@@ -48,7 +48,7 @@ def render_reel(
         render_progress = _progress_part(on_progress, ANALYSIS_SHARE, 1.0)
     else:
         graph = build_layout_graph(info.width, info.height, settings)
-        render_progress = on_progress
+        render_progress = _progress_part(on_progress, 0.0, 1.0)
 
     fd, script_path = tempfile.mkstemp(suffix=".ffgraph", text=True)
     try:
