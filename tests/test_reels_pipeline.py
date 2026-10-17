@@ -203,3 +203,42 @@ def test_render_reels_without_picks_is_an_error(tmp_path):
     prepared = Prepared(transcript.SpeechTranscript((), "en", 1.0), None, [], "local")
     with pytest.raises(ValueError):
         render_reels(tmp_path / "v.mp4", tmp_path / "out", SETTINGS, prepared, [])
+
+
+def test_manual_clip_checks_the_range():
+    from silence_remover.reels.manual import manual_clip
+    clip = manual_clip(10.0, 25.0, duration_s=37.0, title="Mine")
+    assert clip.manual and clip.title == "Mine" and clip.length_s == 15.0
+    assert manual_clip(10.0, 25.0, 37.0).title == "Clip 0:10-0:25"
+    for start, end in [(20, 10), (30, 40), (-1, 5), (0, 0.5), (0, 200)]:
+        with pytest.raises(ValueError):
+            manual_clip(start, end, duration_s=300.0 if end == 200 else 37.0)
+
+
+@requires_ffmpeg
+def test_manual_clip_renders_without_finding_clips(talk, tmp_path, monkeypatch):
+    from silence_remover.reels.manual import manual_clip, prepare_manual
+    from silence_remover.reels.pipeline import render_reels
+    model = FakeWordWhisper()
+    monkeypatch.setattr(transcript, "load_model", lambda size: model)
+    settings = dataclasses.replace(SETTINGS, captions=True)
+    prepared = prepare_manual(talk, settings, cache_dir=tmp_path)
+    assert prepared.picks == [] and prepared.speech.words  # captions need words
+    clip = manual_clip(3.0, 9.5, duration_s=37.0, title="Picked by hand")
+    run = render_reels(talk, tmp_path / "out", settings, prepared, [clip])
+    assert probe(run.reels[0].output).duration_s == pytest.approx(6.5, abs=0.2)
+    summary = json.loads(run.summary_path.read_text(encoding="utf-8"))
+    assert summary["clips"][0]["manual"] is True
+
+
+@requires_ffmpeg
+def test_prepare_manual_skips_transcript_without_captions(talk, tmp_path, monkeypatch):
+    from silence_remover.reels.manual import prepare_manual
+
+    def no_whisper(size):
+        raise AssertionError("transcript not needed")
+    monkeypatch.setattr(transcript, "load_model", no_whisper)
+    prepared = prepare_manual(talk, SETTINGS, cache_dir=tmp_path)
+    assert prepared.speech.words == () and prepared.profile is None
+    with_pauses = prepare_manual(talk, dataclasses.replace(SETTINGS, remove_silence=True))
+    assert with_pauses.profile is not None

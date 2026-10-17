@@ -51,6 +51,7 @@ class Highlight:
     reason: str = ""
     first: int = -1       # sentence indices (inclusive), -1 when unknown
     last: int = -1
+    manual: bool = False  # range typed by the user, not picked by a scorer
 
     def __post_init__(self) -> None:
         if self.end_s <= self.start_s:

@@ -278,6 +278,11 @@ YouTube Shorts, Instagram Reels or TikTok.
 3. **Review** the list: untick clips you don't want, double-click a title to
    edit it. The preview shows the clip's frame with the webcam (green) and
    the crops (yellow).
+   **Add your own clip** for a moment the AI missed: type its start and end
+   (`85`, `1:25` or `1:02:05`, 1–180 s long) and an optional title, then
+   click **Add clip**. It joins the list marked "manual". This works without
+   Find clips too; Create reels then transcribes (for captions) or measures
+   loudness (for pause cuts) only if those options are on.
 4. **Create reels** saves `<name>_reel01.mp4`, `<name>_reel02.mp4`, … and a
    `reels.json` summary (times, titles, hooks, scores) in the output folder.
 
@@ -365,7 +370,7 @@ Without `--extract-audio`, `--swap-audio`, `--remove-echo`, `--transcript`, `--r
 | **Reels** | | | |
 | `--reels` | off | | Find the best moments of INPUT and save each as a reel in the OUTPUT folder, with a `reels.json` summary. Needs `faster-whisper`. With `--dry-run`, only lists the clips. |
 | `--reel` | off | | Save one range of INPUT (`--start` to `--end`) as a reel to OUTPUT. |
-| `--start SECONDS` / `--end SECONDS` | `0` / start + 60 | | With `--reel`: the range to cut. |
+| `--start TIME` / `--end TIME` | `0` / start + 60 | seconds, `m:ss`, `h:mm:ss` | With `--reel`: the range to cut. |
 | `--clips N` | `3` | 1 to 10 | With `--reels`: how many clips. |
 | `--min-length S` / `--max-length S` | `30` / `60` | 5 to 180 | With `--reels`: clip length limits. |
 | `--ai {local,gemini}` | `local` | | With `--reels`: who picks the clips. `gemini` needs `GEMINI_API_KEY` and sends the transcript to Google. |

@@ -191,3 +191,16 @@ def test_cli_reel_keeps_pauses_without_flag(tmp_path):
     assert cli.main([str(clip), str(out), "--reel", "--start", "1", "--end", "9",
                      "--layout", "fit-bars"]) == 0
     assert probe(out).duration_s == pytest.approx(8.0, abs=0.15)
+
+
+@requires_ffmpeg
+def test_cli_reel_accepts_minutes_and_seconds(landscape_clip, tmp_path):
+    out = tmp_path / "mmss.mp4"
+    assert cli.main([str(landscape_clip), str(out), "--reel", "--start", "0:01",
+                     "--end", "0:03.5", "--layout", "fit-bars"]) == 0
+    assert probe(out).duration_s == pytest.approx(2.5, abs=0.15)
+
+
+def test_cli_rejects_bad_time():
+    with pytest.raises(SystemExit):
+        cli.build_parser().parse_args(["a.mp4", "b.mp4", "--reel", "--start", "1:75"])

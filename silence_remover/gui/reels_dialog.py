@@ -1,6 +1,7 @@
 """Create reels: pick settings, find the best clips, review them, render.
 
 1. Find clips   - transcribe (cached), score the moments, find the webcam.
+   Or add your own time ranges ("Add your own clip"); Find is optional then.
 2. Review       - tick the clips to keep, edit their titles, preview the crop.
 3. Create reels - render the ticked clips into the output folder.
 """
@@ -29,10 +30,12 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
-from ..ffmpeg_tools import FFmpegError
+from ..ffmpeg_tools import FFmpegError, probe
 from ..reels.frames import grab_frames
 from ..reels.highlights import Highlight
+from ..reels.manual import manual_clip
 from ..reels.preview import preview_boxes
+from ..reels.timecode import parse_time
 from .frame_preview import FramePreview
 from .reels_settings_form import ReelSettingsForm
 from .reels_workers import PrepareReelsWorker, ReelsPreparation, RenderReelsWorker
@@ -54,6 +57,7 @@ class ReelsDialog(QDialog):
         self._picks: list[Highlight] = []
         self._saved_folder: Path | None = None
         self._frames: dict[int, object] = {}  # row -> preview frame
+        self._duration_s, self._frame_size = _probe_video(input_path)
         self._build_ui()
         self._set_busy(False)
 
@@ -96,6 +100,7 @@ class ReelsDialog(QDialog):
         right.addWidget(self.table, 2)
         right.addWidget(QLabel("Tick the clips to keep; double-click a title to edit it. "
                                "Changing length or number of clips needs Find clips again."))
+        right.addLayout(self._build_manual_row())
         body.addLayout(right, 1)
         root.addLayout(body, 1)
 
@@ -117,7 +122,51 @@ class ReelsDialog(QDialog):
         bottom.addWidget(self.btn_create)
         root.addLayout(bottom)
 
+    def _build_manual_row(self) -> QHBoxLayout:
+        """Start / End / Title fields to add a moment the AI may have missed."""
+        row = QHBoxLayout()
+        self.manual_start = QLineEdit()
+        self.manual_start.setPlaceholderText("Start, e.g. 1:25")
+        self.manual_end = QLineEdit()
+        self.manual_end.setPlaceholderText("End, e.g. 2:10")
+        self.manual_title = QLineEdit()
+        self.manual_title.setPlaceholderText("Title (optional)")
+        self.btn_add_clip = QPushButton("Add clip")
+        tip = ("Add your own time range as a clip. Times: seconds (85), m:ss (1:25) "
+               "or h:mm:ss (1:02:05). Works without Find clips too.")
+        for widget in (self.manual_start, self.manual_end, self.manual_title,
+                       self.btn_add_clip):
+            widget.setToolTip(tip)
+        for field in (self.manual_start, self.manual_end, self.manual_title):
+            field.returnPressed.connect(self._add_manual)
+        self.btn_add_clip.clicked.connect(self._add_manual)
+        row.addWidget(QLabel("Add your own clip:"))
+        row.addWidget(self.manual_start)
+        row.addWidget(self.manual_end)
+        row.addWidget(self.manual_title, 1)
+        row.addWidget(self.btn_add_clip)
+        return row
+
     # ---------- Actions ----------
+
+    def _add_manual(self) -> None:
+        if self._worker is not None:
+            return
+        try:
+            start = parse_time(self.manual_start.text())
+            end = parse_time(self.manual_end.text())
+            clip = manual_clip(start, end, self._duration_s, self.manual_title.text())
+        except ValueError as exc:
+            self._show_error(str(exc))
+            return
+        self._picks.append(clip)
+        row = len(self._picks) - 1
+        self._add_row(row, clip)
+        for field in (self.manual_start, self.manual_end, self.manual_title):
+            field.clear()
+        self.table.selectRow(row)
+        self._set_busy(False)
+        self.status.setText(f"Added {_clock(clip.start_s)}-{_clock(clip.end_s)}.")
 
     def _choose_folder(self) -> None:
         folder = QFileDialog.getExistingDirectory(self, "Save reels to", self.out_dir.text())
@@ -137,8 +186,6 @@ class ReelsDialog(QDialog):
                     "take a while)")
 
     def _create(self) -> None:
-        if self._prep is None:
-            return
         picks = self._chosen_picks()
         if not picks:
             self._show_error("Tick at least one clip to create.")
@@ -148,10 +195,13 @@ class ReelsDialog(QDialog):
         except ValueError as exc:
             self._show_error(str(exc))
             return
-        if settings.webcam is None and self._prep.webcam is not None:
-            settings = dataclasses.replace(settings, webcam=self._prep.webcam)
+        webcam = self._prep.webcam if self._prep is not None else None
+        if settings.webcam is None and webcam is not None:
+            settings = dataclasses.replace(settings, webcam=webcam)
+        # Without Find clips (manual clips only), the worker fetches what it needs.
+        prepared = self._prep.prepared if self._prep is not None else None
         worker = RenderReelsWorker(self.input_path, self._output_folder(), settings,
-                                   self._prep.prepared, picks)
+                                   prepared, picks)
         self._start(worker, self._on_rendered, f"Creating {len(picks)} reel(s)…")
 
     def _cancel(self) -> None:
@@ -163,15 +213,17 @@ class ReelsDialog(QDialog):
 
     def _on_prepared(self, prep: ReelsPreparation) -> None:
         self._prep = prep
-        self._picks = list(prep.prepared.picks)
+        # Clips the user added by hand stay; the found ones are replaced.
+        manual = [p for p in self._picks if p.manual]
+        self._picks = list(prep.prepared.picks) + manual
         self._frames = {}
         self.preview.set_frame(None)
         self.table.clearSelection()
         self._fill_table()
-        found = len(self._picks)
+        found = len(prep.prepared.picks)
         self._finish(f"Found {found} clip(s)." if found else
                      "No clip fits the length limits. Try a shorter minimum length.")
-        if found:
+        if self._picks:
             self.table.selectRow(0)
 
     def _on_rendered(self, run) -> None:
@@ -188,20 +240,25 @@ class ReelsDialog(QDialog):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(self._saved_folder)))
 
     def _fill_table(self) -> None:
-        self.table.setRowCount(len(self._picks))
+        self.table.setRowCount(0)
         for row, pick in enumerate(self._picks):
-            use = QTableWidgetItem()
-            use.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
-                         | Qt.ItemFlag.ItemIsSelectable)
-            use.setCheckState(Qt.CheckState.Checked)
-            cells = [use, _fixed(f"{_clock(pick.start_s)}-{_clock(pick.end_s)}"),
-                     _fixed(f"{pick.length_s:.0f} s"), _fixed(f"{pick.score:.1f}"),
-                     QTableWidgetItem(pick.title)]
-            tip = "\n".join(t for t in (pick.hook, pick.reason) if t)
-            for col, item in enumerate(cells):
-                if tip:
-                    item.setToolTip(tip)
-                self.table.setItem(row, col, item)
+            self._add_row(row, pick)
+
+    def _add_row(self, row: int, pick: Highlight) -> None:
+        """Append one ticked row; other rows keep their ticks and edited titles."""
+        self.table.insertRow(row)
+        use = QTableWidgetItem()
+        use.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled
+                     | Qt.ItemFlag.ItemIsSelectable)
+        use.setCheckState(Qt.CheckState.Checked)
+        score = "manual" if pick.manual else f"{pick.score:.1f}"
+        cells = [use, _fixed(f"{_clock(pick.start_s)}-{_clock(pick.end_s)}"),
+                 _fixed(f"{pick.length_s:.0f} s"), _fixed(score), QTableWidgetItem(pick.title)]
+        tip = "\n".join(t for t in (pick.hook, pick.reason) if t)
+        for col, item in enumerate(cells):
+            if tip:
+                item.setToolTip(tip)
+            self.table.setItem(row, col, item)
 
     def _chosen_picks(self) -> list[Highlight]:
         chosen = []
@@ -218,15 +275,16 @@ class ReelsDialog(QDialog):
         so every failure just keeps the previous preview.
         """
         rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
-        if self._prep is None or not rows or rows[0].row() >= len(self._picks):
+        if not rows or rows[0].row() >= len(self._picks) or not all(self._frame_size):
             return
         try:
             frame = self._preview_frame(rows[0].row())
             if frame is None:
                 return
             settings = self.form.settings()
-            w, h = self._prep.frame_size
-            boxes = preview_boxes(settings, w, h, settings.webcam or self._prep.webcam)
+            found_webcam = self._prep.webcam if self._prep is not None else None
+            w, h = self._frame_size
+            boxes = preview_boxes(settings, w, h, settings.webcam or found_webcam)
             self.preview.set_frame(frame, boxes)
         except Exception:  # noqa: BLE001 - see docstring
             log.exception("Could not draw the reel preview")
@@ -237,7 +295,7 @@ class ReelsDialog(QDialog):
             pick = self._picks[row]
             try:
                 frames = grab_frames(self.input_path, [(pick.start_s + pick.end_s) / 2],
-                                     self._prep.frame_size)
+                                     self._frame_size)
             except (FFmpegError, OSError):
                 frames = []
             self._frames[row] = frames[0] if frames else None
@@ -269,6 +327,9 @@ class ReelsDialog(QDialog):
 
     def _set_busy(self, busy: bool) -> None:
         self.btn_find.setEnabled(not busy)
+        for widget in (self.manual_start, self.manual_end, self.manual_title,
+                       self.btn_add_clip):
+            widget.setEnabled(not busy)
         self.form.setEnabled(not busy)
         self.btn_cancel.setEnabled(busy)
         self.btn_create.setEnabled(not busy and bool(self._picks))
@@ -295,6 +356,15 @@ class ReelsDialog(QDialog):
                 signal.disconnect()
             worker.cancel()
             worker.wait()
+
+
+def _probe_video(input_path: str) -> tuple[float, tuple[int, int]]:
+    """Duration and picture size, or zeros when the file can't be read."""
+    try:
+        info = probe(input_path)
+    except (FFmpegError, OSError):
+        return 0.0, (0, 0)
+    return info.duration_s, (info.width, info.height)
 
 
 def _fixed(text: str) -> QTableWidgetItem:

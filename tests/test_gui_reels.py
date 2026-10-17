@@ -182,3 +182,56 @@ def test_escape_stops_running_job(dialog, app):
     dialog._find()
     dialog.reject()
     assert dialog._worker is None
+
+
+def add_manual(dialog, start, end, title=""):
+    dialog.manual_start.setText(start)
+    dialog.manual_end.setText(end)
+    dialog.manual_title.setText(title)
+    dialog._add_manual()
+
+
+def test_manual_clip_without_finding(dialog, app, tmp_path, monkeypatch):
+    dialog.form.captions.setChecked(False)
+    add_manual(dialog, "0:03", "0:09.5", "My moment")
+    assert dialog.table.rowCount() == 1
+    assert dialog.table.item(0, 3).text() == "manual"
+    assert dialog.table.item(0, 4).text() == "My moment"
+    assert dialog.btn_create.isEnabled()
+    assert dialog.manual_start.text() == ""  # cleared for the next one
+    monkeypatch.setattr(QtWidgets.QMessageBox, "information", lambda *a, **k: None)
+    dialog._create()
+    wait_idle(dialog, app)
+    from silence_remover.ffmpeg_tools import probe
+    out = tmp_path / "out" / "talk_reel01.mp4"
+    assert probe(out).duration_s == pytest.approx(6.5, abs=0.2)
+    summary = json.loads((tmp_path / "out" / "reels.json").read_text(encoding="utf-8"))
+    assert summary["clips"][0]["manual"] is True
+
+
+@pytest.mark.parametrize("start, end", [("0:20", "0:10"), ("0:30", "1:30"), ("x", "0:10")])
+def test_bad_manual_times_are_reported(dialog, monkeypatch, start, end):
+    errors = []
+    monkeypatch.setattr(QtWidgets.QMessageBox, "critical", lambda *a, **k: errors.append(a[2]))
+    add_manual(dialog, start, end)
+    assert errors and dialog.table.rowCount() == 0
+
+
+def test_manual_clips_survive_finding_again(dialog, app):
+    add_manual(dialog, "0:01", "0:04")
+    dialog._find()
+    wait_idle(dialog, app)
+    assert dialog.table.rowCount() == 3  # 2 found + 1 manual
+    dialog._find()
+    wait_idle(dialog, app)
+    assert dialog.table.rowCount() == 3
+    assert sum(p.manual for p in dialog._picks) == 1
+
+
+def test_unticking_is_kept_when_adding_a_manual_clip(dialog, app):
+    dialog._find()
+    wait_idle(dialog, app)
+    dialog.table.item(0, 0).setCheckState(QtCore.Qt.CheckState.Unchecked)
+    add_manual(dialog, "0:01", "0:04")
+    assert dialog.table.item(0, 0).checkState() == QtCore.Qt.CheckState.Unchecked
+    assert dialog.table.item(2, 0).checkState() == QtCore.Qt.CheckState.Checked

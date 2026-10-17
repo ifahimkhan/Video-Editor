@@ -58,7 +58,7 @@ class Prepared:
     """Everything needed to render reels without transcribing or picking again."""
 
     speech: SpeechTranscript
-    profile: LoudnessProfile
+    profile: LoudnessProfile | None  # None: not measured (only needed to cut pauses)
     picks: list[Highlight]
     ranker: str
 
@@ -137,7 +137,11 @@ def render_reels(
         # Find the webcam once for all clips instead of once per clip.
         webcam = resolve_webcam(input_path, probe(input_path), settings)
         settings = dataclasses.replace(settings, webcam=webcam)
-    keep_all = detect(prepared.profile, REEL_SILENCE).keep if settings.remove_silence else None
+    keep_all = None
+    if settings.remove_silence:
+        profile = prepared.profile or analyze(input_path, use_vad=False,
+                                              is_cancelled=is_cancelled)
+        keep_all = detect(profile, REEL_SILENCE).keep
 
     results = []
     share = 1 / len(picks)
@@ -207,6 +211,7 @@ def _write_summary(out_dir: Path, input_path: Path, results: list[ReelResult],
         "hook": r.highlight.hook,
         "score": round(r.highlight.score, 2),
         "reason": r.highlight.reason,
+        "manual": r.highlight.manual,
     } for r in results]
     path = out_dir / SUMMARY_NAME
     write_json(path, {"source": input_path.name, "ranker": ranker, "clips": clips})

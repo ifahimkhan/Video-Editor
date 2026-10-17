@@ -14,6 +14,7 @@ from .export import render_reel
 from .gemini_ranker import DEFAULT_GEMINI_MODEL, KEY_ENV_VAR
 from .pipeline import RANKERS, REEL_SILENCE, create_reels, find_highlights
 from .settings import Aspect, CaptionStyle, Layout, Rect, ReelSettings
+from .timecode import parse_time
 
 # Same default as the GUI: tutorials are screen recordings with a webcam.
 CLI_LAYOUT = Layout.AUTO
@@ -29,9 +30,10 @@ def add_reel_arguments(parser: argparse.ArgumentParser, jobs) -> None:
                       help="find the best moments of INPUT from its transcript and save "
                            "each as a vertical reel in the OUTPUT folder")
     p = parser
-    p.add_argument("--start", type=float, default=0.0, metavar="SECONDS",
-                   help="with --reel: where the clip starts (default 0)")
-    p.add_argument("--end", type=float, default=None, metavar="SECONDS",
+    p.add_argument("--start", type=_time_arg, default=0.0, metavar="TIME",
+                   help="with --reel: where the clip starts, as seconds, m:ss or h:mm:ss "
+                        "(default 0)")
+    p.add_argument("--end", type=_time_arg, default=None, metavar="TIME",
                    help=f"with --reel: where the clip ends (default start + "
                         f"{r.max_length_s}s, or the end of the video)")
     p.add_argument("--clips", type=int, default=r.clip_count,
@@ -130,6 +132,13 @@ def run_reels(args: argparse.Namespace, progress: Callable[[float], None]) -> in
         print(f"Saved {reel.output}  ({reel.highlight.length_s:.0f}s) {reel.highlight.title}")
     print(f"Summary: {run.summary_path}")
     return 0
+
+
+def _time_arg(text: str) -> float:
+    try:
+        return parse_time(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from None
 
 
 def _clock(seconds: float) -> str:
