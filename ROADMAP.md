@@ -414,6 +414,11 @@ function the renderer uses. Optionally burn the subtitles in with the
 **Done when.** The remapped subtitle times stay in sync with the cut video
 (checked in a test against known segment boundaries).
 
+**Partly done.** Reels already burn in word-by-word captions and move them
+through pause cuts (`reels/captions.py`, `remap_words`). The full-video
+version can reuse that module: ASS generation, word grouping and the
+cut remapping.
+
 ### 5.3 Transcript-based editing ☐ · XL
 
 **Why.** A Descript-style workflow: delete text to cut the video.
@@ -469,6 +474,10 @@ code.
 | README images live inside the Python package (`silence_remover/docs/`) | repo layout | Move them to a top-level `docs/` and update the links |
 | Compiled `.pyc` files remain in the first commit's history | git history | Leave it (harmless); rewriting history isn't worth it |
 | The tests only cover Windows and Linux | CI | See 6.3 |
+| Reels: the webcam box can't be adjusted in the GUI (CLI `--webcam` only) | `gui/reels_dialog.py` | Let the user drag the green box on the preview |
+| Reels: tracking and clip-picking thresholds were tuned on synthetic videos | `reels/activity.py`, `webcam.py`, `highlights.py` | Tune on real tutorial recordings; add a few short real clips as fixtures |
+| Reels: typing activity isn't used to score clips (talk + code should rank higher) | `reels/highlights.py` | Sample activity over the whole video at 1 fps and add it as a feature |
+| Reels: `reels.json` records the requested picker even when Gemini fell back to local | `reels/pipeline.py` | Return which ranker actually produced each pick |
 | Only the first video and audio streams are used | all modules | See 3.5 |
 
 ---
@@ -485,5 +494,6 @@ code.
 | MP3 audio extractor | `audio_export.py` · PR #1 |
 | Swap audio (replace the soundtrack, video untouched) | `swap_audio.py` · PR #2 |
 | Remove echo (doubled voice from two microphones recording at once) | `echo_dsp.py`, `echo_removal.py` |
+| Create reels: best 30–60 s moments as vertical clips, face and typing tracking (Auto/Split/Speaker/Code), burned-in captions, title overlay, optional pause cuts, local or Gemini clip picker, GUI dialog | `reels/`, `gui/reels_dialog.py` |
 | CLI covering every feature | `cli.py` |
 | CI: lint plus tests on Ubuntu and Windows, 80% coverage gate | `.github/workflows/ci.yml` |

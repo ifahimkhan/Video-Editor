@@ -33,6 +33,7 @@ length is cut.*
 | [**Swap audio**](#swap-audio) | Replaces a video's soundtrack with another file, such as a cleaned-up recording. The picture is copied untouched. | **Swap audio…** | `--swap-audio AUDIO` |
 | [**Remove echo**](#remove-echo) | Removes the doubled-voice echo you get when two microphones record you at once, and saves the cleaned audio. | **Remove echo…** | `--remove-echo` |
 | [**Export transcript**](#export-transcript) | Writes down what is said as subtitles (SRT/VTT) or plain text, in its own language or translated to English, with faster-whisper. | **Export transcript…** | `--transcript` |
+| [**Create reels**](#create-reels) | Finds the best 30–60 s moments of a tutorial and saves them as vertical Shorts/Reels that follow your face and your typing, with word-by-word captions. Optional Gemini AI picks the clips. | **Create reels…** | `--reels` / `--reel` |
 
 Across all tools:
 
@@ -43,7 +44,7 @@ Across all tools:
   the window never freezes.
 - **GUI and CLI:** every tool also works from the command line, for scripting
   and batch jobs.
-- **Tested:** 154 automated tests, run on Windows and Linux in CI.
+- **Tested:** 343 automated tests, run on Windows and Linux in CI.
 
 ### Coming next
 
@@ -92,8 +93,12 @@ pip install -r requirements.txt
 | `numpy` | audio analysis (required) |
 | `PyQt6` | the desktop app |
 | `pyqtgraph` | the interactive waveform (without it, the app uses a simpler static timeline) |
-| `onnxruntime` | AI voice detection (without it, only loudness detection is available) |
-| `faster-whisper` | Export transcript (without it, the button is greyed out) |
+| `onnxruntime` | AI voice detection, and face tracking for reels (without it, only loudness detection is available and reels keep the webcam crop centred) |
+| `faster-whisper` | Export transcript and Create reels (without it, those buttons are greyed out) |
+
+The optional Gemini clip picker for reels needs no extra package: it calls
+the Gemini API with Python's standard library. It only needs an API key in
+`GEMINI_API_KEY`.
 | `pytest`, `pytest-cov`, `ruff` | development: tests and lint |
 
 ### 3. Run it
@@ -247,25 +252,90 @@ video player) or `.txt` plain text.
 - It runs on the CPU. With an NVIDIA GPU and CUDA installed, set `USE_GPU=1`
   before starting the app to use the GPU.
 
+### Create reels
+
+**Create reels…** turns a landscape tutorial (a screen recording with your
+webcam overlaid in the bottom-right corner) into vertical short clips for
+YouTube Shorts, Instagram Reels or TikTok.
+
+1. **Choose the settings** on the left (every one has a tooltip):
+
+   | Setting | Options |
+   |---|---|
+   | Layout | **Auto** (code while you type, your face otherwise), **Split** (typing on top, webcam below), **Speaker** (your face, full screen), **Code** (the typing area, full screen), **Fit** (whole video centred on a blurred background or black bars), **Centre crop** |
+   | Shape | 9:16 (Shorts, Reels, TikTok), 1:1, 4:5 |
+   | Clip length | shortest and longest clip, 30–60 s by default |
+   | Number of clips | how many moments to find (1–10) |
+   | Pick clips with | **Local scorer** (offline) or **Gemini AI** (sends the transcript to Google) |
+   | Code zoom | 1.0–3.0×, bigger code text in Auto, Split and Code |
+   | Captions | word-by-word captions, the spoken word highlighted; Bold, Box or Minimal style |
+   | Title | the clip title at the top for the first 4 s |
+   | Pauses | **off by default**: clips keep their natural pauses; tick it to cut pauses over 0.35 s |
+
+2. **Find clips** transcribes the video, picks the best moments and finds
+   your webcam. The transcript is saved in the output folder, so the next run
+   (with other settings) skips it.
+3. **Review** the list: untick clips you don't want, double-click a title to
+   edit it. The preview shows the clip's frame with the webcam (green) and
+   the crops (yellow).
+4. **Create reels** saves `<name>_reel01.mp4`, `<name>_reel02.mp4`, … and a
+   `reels.json` summary (times, titles, hooks, scores) in the output folder.
+
+How the clips are chosen:
+
+- A clip is always a run of **whole sentences**, so it never starts or ends
+  mid-word.
+- The **local scorer** prefers clips that are mostly speech, open with a
+  hook (a question, "here's", "mistake", "secret"…), end on a full sentence,
+  don't open with "and"/"so"/"but", are louder than usual, and sit near the
+  middle of the length range.
+- **Gemini** (`gemini-2.5-flash`, set `GEMINI_API_KEY`) reads the numbered
+  sentences and returns sentence ranges with a title, an on-screen hook line
+  and a score. Its answer is checked: too-long clips are trimmed by whole
+  sentences, invalid or overlapping ones are dropped, and missing slots are
+  filled by the local scorer. Without a key, or if the API fails, the local
+  scorer is used.
+
+How the framing works:
+
+- **Webcam:** found once per video from your face in the bottom-right corner
+  and the overlay's border.
+- **Speaker:** the crop follows your face inside the webcam overlay.
+- **Code:** the crop follows where the screen changes as you type. A blinking
+  cursor is ignored, and a scroll or window switch makes it cut straight to
+  the new content. The webcam corner is hidden in the code view.
+- Small movements are ignored and big ones ease in at a capped speed, like a
+  camera operator.
+
+Notes:
+
+- The speaker view enlarges the webcam overlay to fill the frame, so a small
+  overlay looks soft. A bigger webcam overlay when recording helps; Auto and
+  Split are less affected.
+- Captions are drawn with Arial (libass, included in FFmpeg builds such as
+  gyan.dev and BtbN).
+- On the command line, `--reel` cuts one range you choose (`--start`/`--end`)
+  and `--webcam X,Y,W,H` overrides the webcam position.
+
 ---
 
 ## Command line
 
 ```bash
 python -m silence_remover                          # no arguments: open the editor
-python -m silence_remover INPUT OUTPUT [options]   # remove silence, extract or swap audio, remove echo, transcribe
+python -m silence_remover INPUT OUTPUT [options]   # remove silence, extract or swap audio, remove echo, transcribe, make reels
 python -m silence_remover -h                       # list all options
 ```
 
-Without `--extract-audio`, `--swap-audio`, `--remove-echo` or `--transcript`, the command
-removes silence.
+Without `--extract-audio`, `--swap-audio`, `--remove-echo`, `--transcript`, `--reel` or
+`--reels`, the command removes silence.
 
 ### Arguments
 
 | Argument | Description |
 |---|---|
 | `INPUT` | Source video or audio file (mp4, mkv, mov, avi, webm, m4v, mp3, wav, m4a, …). |
-| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video (use the source's extension with `--swap-audio`), `.mp3` for `--extract-audio`, `.mp3`/`.wav`/`.flac`/`.m4a` for `--remove-echo`, `.srt`/`.vtt`/`.txt` for `--transcript`. Required even with `--dry-run`, which never writes it. |
+| `OUTPUT` | File to write. The extension picks the container: `.mp4`/`.mkv` for video (use the source's extension with `--swap-audio`), `.mp3` for `--extract-audio`, `.mp3`/`.wav`/`.flac`/`.m4a` for `--remove-echo`, `.srt`/`.vtt`/`.txt` for `--transcript`, `.mp4` for `--reel`, and a **folder** for `--reels`. Required even with `--dry-run`, which never writes it (with `--reels --dry-run` the transcript cache is still saved there). |
 
 ### Options
 
@@ -291,11 +361,30 @@ removes silence.
 | **Export transcript** | | | |
 | `--transcript` | off | | Write what is said in INPUT to OUTPUT (`.srt`, `.vtt` or `.txt`). Needs `faster-whisper`. No silence removal, so the silence-removal options are ignored. |
 | `--translate` | off | | With `--transcript`: translate the speech to English. |
-| `--whisper-model SIZE` | `medium` | `tiny`, `base`, `small`, `medium`, `large-v3` | With `--transcript`: speech model. Larger is more accurate but slower; each is downloaded on first use. |
+| `--whisper-model SIZE` | `medium` | `tiny`, `base`, `small`, `medium`, `large-v3` | With `--transcript`, `--reels` or `--reel --captions`: speech model. Larger is more accurate but slower; each is downloaded on first use. |
+| **Reels** | | | |
+| `--reels` | off | | Find the best moments of INPUT and save each as a reel in the OUTPUT folder, with a `reels.json` summary. Needs `faster-whisper`. With `--dry-run`, only lists the clips. |
+| `--reel` | off | | Save one range of INPUT (`--start` to `--end`) as a reel to OUTPUT. |
+| `--start SECONDS` / `--end SECONDS` | `0` / start + 60 | | With `--reel`: the range to cut. |
+| `--clips N` | `3` | 1 to 10 | With `--reels`: how many clips. |
+| `--min-length S` / `--max-length S` | `30` / `60` | 5 to 180 | With `--reels`: clip length limits. |
+| `--ai {local,gemini}` | `local` | | With `--reels`: who picks the clips. `gemini` needs `GEMINI_API_KEY` and sends the transcript to Google. |
+| `--gemini-model NAME` | `gemini-2.5-flash` | | With `--ai gemini` (or set `GEMINI_MODEL`). |
+| `--layout NAME` | `fit-blur` | `auto`, `split`, `speaker`, `code`, `fit-blur`, `fit-bars`, `static-crop` | How the video fills the vertical frame. |
+| `--aspect RATIO` | `9:16` | `9:16`, `1:1`, `4:5` | Output frame shape. |
+| `--code-zoom Z` | `1.0` | 1.0 to 3.0 | Zoom into the typing area (`auto`, `split`, `code`). |
+| `--split-ratio R` | `0.6` | 0.3 to 0.8 | With `--layout split`: share of the height for the screen. |
+| `--webcam X,Y,W,H` | found automatically | pixels | Webcam overlay position, if detection gets it wrong. |
+| `--captions` | off | | Burn in word-by-word captions. |
+| `--caption-style STYLE` | `bold` | `bold`, `box`, `minimal` | Look of the captions. |
+| `--title-overlay` | off | | Show the clip title at the top for the first 4 s. |
+| `--title TEXT` | | | With `--reel --title-overlay`: the title. (`--reels` uses each clip's own title.) |
+| `--remove-silence` | off | | Cut pauses inside each reel. Without it, clips keep their pauses. |
 
 `-t` only applies in loudness mode and `-v` only in voice mode; the other
 silence-removal options apply to both. `--extract-audio`, `--swap-audio`,
-`--remove-echo` and `--transcript` are separate jobs and can't be combined.
+`--remove-echo`, `--transcript`, `--reel` and `--reels` are separate jobs and can't
+be combined.
 
 ### Examples
 
@@ -336,18 +425,29 @@ python -m silence_remover talk.mp4 talk_fixed.mp4 --swap-audio talk_no_echo.wav
 python -m silence_remover talk.mp4 talk.srt --transcript
 python -m silence_remover talk.mp4 talk_english.srt --transcript --translate
 
+# Three vertical reels that follow your face and typing, with captions
+python -m silence_remover talk.mp4 talk_reels --reels --layout auto --captions --title-overlay
+
+# Let Gemini pick five clips; list them first without rendering (PowerShell)
+$env:GEMINI_API_KEY = "<your key>"
+python -m silence_remover talk.mp4 talk_reels --reels --ai gemini --clips 5 --dry-run
+
+# One reel from a range you choose, pauses cut, code zoomed in
+python -m silence_remover talk.mp4 tip.mp4 --reel --start 125 --end 170 --layout split --code-zoom 1.5 --remove-silence
+
 # Batch a folder (PowerShell)
 Get-ChildItem *.mp4 | ForEach-Object { python -m silence_remover $_ "cut_$($_.Name)" --lossless }
 ```
 
 The exit code is `0` on success and `1` on errors. Errors include invalid
 settings, a missing file, a file without the needed audio or video track,
-everything being below the threshold, voice mode without `onnxruntime`, and
-`--transcript` without `faster-whisper`.
+everything being below the threshold, voice mode without `onnxruntime`,
+`--transcript` or `--reels` without `faster-whisper`, and `--reels` when no part
+of the video fits the clip length limits.
 With `--remove-echo`, a file with no echo is also an error. An unknown
 option, an out-of-list `--mp3-bitrate`, or combining two of
-`--extract-audio`, `--swap-audio`, `--remove-echo` and `--transcript` makes argparse print
-usage and exit with `2`.
+`--extract-audio`, `--swap-audio`, `--remove-echo`, `--transcript`, `--reel` and `--reels`
+makes argparse print usage and exit with `2`.
 
 ---
 
@@ -431,6 +531,40 @@ pass 2:  y[n] = x[n] − Σ h[k] · y[n − lag0 − k]   (h blended between win
   Scaling the whole filter down would weaken the cancellation where the voice
   is.
 
+### Reels
+
+```
+video ──▶ faster-whisper (word timings, cached) ──▶ sentences
+      ──▶ loudness profile ──────────────────────┐
+sentences ──▶ every whole-sentence run that fits ─┴─▶ local score ─┐
+          └─▶ Gemini (sentence index ranges, JSON) ──▶ checked ────┴─▶ best non-overlapping clips
+
+once per video:  8 frames ──▶ YuNet face (bottom-right) + persistent border edges ──▶ webcam box
+
+per clip, one decode at 5 fps:
+   webcam area ──▶ YuNet ──▶ face centre        ┐
+   screen      ──▶ frame differences ──▶ typing  ├─▶ dead-zone, eased, speed-limited crop paths
+                   (cursor blink, webcam out)    ┘    + Auto shots (≥ 3 s each)
+
+one ffmpeg pass:  crop x/y as piecewise-linear expressions ──▶ scale/vstack/overlay
+                  ──▶ optional pause cuts (select/aselect) ──▶ captions (libass .ass)
+```
+
+- **Face detection** uses the YuNet ONNX model run by `onnxruntime`; the box
+  decoding and NMS are done in numpy, so OpenCV isn't needed.
+- **Typing detection** counts a pixel only when it differs from both of the
+  two previous frames, which ignores a blinking cursor but not new text. A
+  change over 15% of the screen is a scroll, a window switch or a cut.
+- **Crop paths** are written into the filter script as balanced
+  `if(lt(t,T),…)` trees over the 5 fps samples, interpolated linearly, so a
+  3-minute clip stays about 10 levels deep.
+- **Pause cuts** run after the tracked crop, so tracking keeps the original
+  timeline; caption times are moved through the same cuts.
+- **Captions:** one ASS event per word shows its line with that word
+  highlighted. Lines break at pauses and sentence ends and shrink to fit.
+  FFmpeg runs inside a temporary folder holding the `.ass` file, so no
+  Windows path has to be escaped in the filter graph.
+
 ---
 
 ## Project layout
@@ -450,17 +584,40 @@ silence_remover/
   echo_dsp.py      remove echo: detection and inverse filter (numpy only)
   echo_removal.py  remove echo: two streamed ffmpeg passes around echo_dsp
   transcript.py    export transcript: faster-whisper to SRT, VTT or text
+  reels/           create reels
+    settings.py         layouts, shapes, length limits (pure)
+    layout.py           fit / crop / split filter graphs (pure)
+    face_detect.py      YuNet face detector (onnxruntime + numpy)
+    frames.py           ffmpeg frame pipe
+    webcam.py           find the webcam overlay once per video
+    activity.py         typing detection and focus (pure numpy)
+    tracking.py         smooth camera moves (pure)
+    framing.py          speaker/code crop paths, Auto shots (pure)
+    analyze.py          one decode pass per clip: face + typing
+    planner.py, motion.py  crops and shots -> ffmpeg expressions
+    highlights.py       local clip scorer (pure)
+    gemini_ranker.py    Gemini clip picker (REST, stdlib)
+    captions.py         ASS captions and title overlay (pure)
+    transcript_cache.py transcript with word timings, cached as JSON
+    export.py           render one reel in one ffmpeg pass
+    pipeline.py         transcribe -> pick -> render, reels.json
+    preview.py          preview boxes for the GUI (pure)
+    cli_args.py         --reel / --reels options
   models/
     silero_vad_v6.onnx
+    face_detection_yunet_2023mar.onnx
   gui/
     main_window.py        window, tool buttons, controls, live preview
     waveform_timeline.py  pyqtgraph waveform with draggable thresholds
     waveform_data.py      plot math (numpy only, unit tested)
     timeline.py           fallback timeline when pyqtgraph is missing
     workers.py            QThread workers for analysis and every export
+    reels_dialog.py       Create reels dialog: find, review, preview, create
+    reels_settings_form.py, reels_workers.py, frame_preview.py
   docs/                   screenshots used in this README
 tests/
   fixtures/speech.flac    short synthetic speech clip for VAD tests
+  fixtures/face.jpg       public-domain portrait for face-detection tests
 ROADMAP.md                planned features and how we add them
 CONTRIBUTING.md           how to set up, code conventions, PR checklist
 LICENSE                   MIT
@@ -518,6 +675,11 @@ ruff check .                                   # lint (config in ruff.toml)
 | Lossless keeps too much silence | The source has few keyframes (common for screen recordings); use **Precise**. |
 | Lossless export fails with a muxer or codec error | The source codecs don't fit the chosen container; save with the source's own extension or `.mkv`. |
 | Swapped audio is out of sync | Use `--audio-offset` (positive = later) on the command line. |
+| Create reels is greyed out | Open a video file first, and install `faster-whisper`. |
+| Reels crop the wrong area for the webcam | The webcam is searched for in the bottom-right corner. If yours is elsewhere or not found, pass its position with `--webcam X,Y,W,H` on the command line. |
+| The speaker view looks soft | The webcam overlay is enlarged to fill the frame; record with a bigger overlay, or use Auto/Split. |
+| Gemini was not used | `GEMINI_API_KEY` is not set, or the API failed; the reason is logged and the local scorer is used instead. |
+| No reels found | No run of whole sentences fits the length limits; lower the shortest clip length. |
 | `pip` fails with `CERTIFICATE_VERIFY_FAILED ... self-signed certificate` | Antivirus or a proxy is inspecting HTTPS. Export the Windows trusted roots into a PEM bundle and run `pip install --cert bundle.pem -r requirements.txt`. |
 
 ---
@@ -530,6 +692,9 @@ ruff check .                                   # lint (config in ruff.toml)
   [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT license).
 - [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (MIT license)
   and OpenAI's Whisper models (MIT license) for transcripts.
+- [YuNet](https://github.com/opencv/opencv_zoo/tree/main/models/face_detection_yunet)
+  from the OpenCV model zoo (MIT license) for face detection in reels.
+- [Google Gemini](https://ai.google.dev/) (optional) for picking reel clips.
 - [PyQt6](https://www.riverbankcomputing.com/software/pyqt/) and
   [pyqtgraph](https://www.pyqtgraph.org/) for the GUI.
 
