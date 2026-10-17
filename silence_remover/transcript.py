@@ -53,10 +53,18 @@ class Caption:
 
 
 @dataclass(frozen=True)
+class Word:
+    start_s: float
+    end_s: float
+    text: str
+
+
+@dataclass(frozen=True)
 class SpeechTranscript:
     captions: tuple[Caption, ...]
     language: str
     language_probability: float
+    words: tuple[Word, ...] = ()  # only with word_timestamps=True
 
 
 @dataclass(frozen=True)
@@ -162,17 +170,23 @@ def speech_captions(
     model_size: str = DEFAULT_MODEL,
     on_progress: Progress | None = None,
     is_cancelled: Cancelled | None = None,
+    word_timestamps: bool = False,
+    start_s: float | None = None,
+    end_s: float | None = None,
 ) -> SpeechTranscript:
     """Transcribe `input_path` into timed captions (one per spoken phrase).
 
-    Raises like `transcribe`, without writing anything.
+    With `word_timestamps`, each word's timing is returned too (for animated
+    captions). `start_s`/`end_s` limit the work to part of the file; times
+    are always relative to the start of the file. Raises like `transcribe`,
+    without writing anything.
     """
     if model_size not in MODEL_SIZES:
         raise ValueError(f"Speech model must be one of {', '.join(MODEL_SIZES)}")
     report = on_progress or (lambda _f: None)
     cancelled = is_cancelled or (lambda: False)
 
-    audio = decode_audio(Path(input_path))
+    audio = decode_audio(Path(input_path), start_s, end_s)
     _check(cancelled)
     report(DECODE_SHARE)
     model = load_model(model_size)
@@ -183,25 +197,41 @@ def speech_captions(
         audio, beam_size=BEAM_SIZE, vad_filter=True,
         task="translate" if translate else "transcribe",
         vad_parameters={"min_silence_duration_ms": MIN_SILENCE_MS},
+        word_timestamps=word_timestamps,
     )
+    offset = start_s or 0.0
     duration_s = max(audio.size / SAMPLE_RATE, 1e-3)
-    captions = []
+    captions: list[Caption] = []
+    words: list[Word] = []
     for segment in segments:  # lazy: each step runs the model on more audio
         _check(cancelled)
-        captions.append(Caption(segment.start, segment.end, segment.text))
+        captions.append(Caption(segment.start + offset, segment.end + offset, segment.text))
+        words.extend(_segment_words(segment, offset) if word_timestamps else ())
         done = min(1.0, segment.end / duration_s)
         report(DECODE_SHARE + LOAD_SHARE + done * (1 - DECODE_SHARE - LOAD_SHARE))
     report(1.0)
-    return SpeechTranscript(tuple(captions), info.language, info.language_probability)
+    return SpeechTranscript(tuple(captions), info.language, info.language_probability,
+                            tuple(words))
 
 
-def decode_audio(input_path: Path) -> np.ndarray:
-    """The first audio track as 16 kHz mono float32 in [-1, 1]."""
+def _segment_words(segment, offset: float) -> list[Word]:
+    return [Word(w.start + offset, w.end + offset, w.word.strip())
+            for w in (getattr(segment, "words", None) or ()) if w.word.strip()]
+
+
+def decode_audio(input_path: Path, start_s: float | None = None,
+                 end_s: float | None = None) -> np.ndarray:
+    """The first audio track (or `start_s`..`end_s` of it) as 16 kHz mono float32."""
     info = probe(input_path)
     if not info.has_audio:
         raise FFmpegError("The selected file has no audio track to transcribe.")
+    window = []
+    if start_s is not None:
+        window += ["-ss", f"{start_s:.3f}"]
+    if end_s is not None:
+        window += ["-t", f"{end_s - (start_s or 0.0):.3f}"]
     cmd = [
-        find_binary("ffmpeg"), "-nostdin", "-v", "error", "-i", str(input_path),
+        find_binary("ffmpeg"), "-nostdin", "-v", "error", *window, "-i", str(input_path),
         "-map", "0:a:0", "-vn", "-ac", "1", "-ar", str(SAMPLE_RATE),
         "-f", "s16le", "-acodec", "pcm_s16le", "pipe:1",
     ]

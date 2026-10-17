@@ -2,6 +2,7 @@
 
 import subprocess
 
+import numpy as np
 import pytest
 
 from silence_remover import cli
@@ -97,3 +98,96 @@ def test_cli_reel_bad_webcam_is_an_error(landscape_clip, tmp_path):
     code = cli.main([str(landscape_clip), str(tmp_path / "o.mp4"), "--reel",
                      "--layout", "split", "--webcam", "nonsense"])
     assert code == 1
+
+
+def frame_at(path, t: float):
+    import numpy as np
+    raw = subprocess.run(
+        ["ffmpeg", "-v", "error", "-ss", str(t), "-i", str(path), "-frames:v", "1",
+         "-f", "rawvideo", "-pix_fmt", "gray", "-"], capture_output=True, check=True).stdout
+    w, h = video_size(path)
+    return np.frombuffer(raw, np.uint8).reshape(h, w)
+
+
+@requires_ffmpeg
+def test_render_reel_burns_captions_and_title(tmp_path):
+    from silence_remover.transcript import Word
+    clip = tmp_path / "flat.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x404040:size=320x180:"
+        "rate=25:duration=4", "-f", "lavfi", "-i", "sine=duration=4",
+        "-c:v", "libx264", "-preset", "ultrafast", "-c:a", "aac", "-shortest", str(clip),
+    ], check=True)
+    words = [Word(1.0, 1.4, "hello"), Word(1.5, 2.5, "world")]
+    plain = render_reel(clip, tmp_path / "plain.mp4", 0.5, 3.5,
+                        ReelSettings(layout=Layout.FIT_BARS))
+    captioned = render_reel(clip, tmp_path / "cap.mp4", 0.5, 3.5,
+                            ReelSettings(layout=Layout.FIT_BARS, captions=True,
+                                         title_overlay=True),
+                            words=words, title="My title")
+    # Captions sit at 72% height; the title near the top. Both add bright pixels.
+    cap_band = slice(int(1920 * 0.68), int(1920 * 0.76))
+    title_band = slice(100, 320)
+    a, b = frame_at(plain, 1.2), frame_at(captioned, 1.2)
+    assert (b[cap_band] > 200).sum() > 2000 and (a[cap_band] > 200).sum() == 0
+    assert (b[title_band] > 200).sum() > 1000
+
+
+@requires_ffmpeg
+def test_render_reel_removes_silence_inside_clip(tmp_path):
+    from silence_remover.segments import Segment
+
+    from .conftest import make_clip
+    clip = tmp_path / "pauses.mp4"
+    make_clip(clip, 10, [(3, 5)])
+    keep = (Segment(0, 2000), Segment(4000, 8000))  # clip 1-9 s, pause at 3-5 s
+    out = render_reel(clip, tmp_path / "cut.mp4", 1.0, 9.0,
+                      ReelSettings(layout=Layout.FIT_BARS, aspect=Aspect.SQUARE), keep=keep)
+    assert probe(out).duration_s == pytest.approx(6.0, abs=0.15)
+
+
+@requires_ffmpeg
+def test_render_reel_all_silent_keep_is_an_error(landscape_clip, tmp_path):
+    with pytest.raises(ValueError, match="silent"):
+        render_reel(landscape_clip, tmp_path / "x.mp4", 1.0, 3.0, ReelSettings(), keep=())
+
+
+@requires_ffmpeg
+def test_cli_reel_with_silence_removal_and_title(tmp_path):
+    from .conftest import make_clip
+    clip = tmp_path / "pauses.mp4"
+    make_clip(clip, 10, [(3, 5)])
+    out = tmp_path / "o.mp4"
+    code = cli.main([str(clip), str(out), "--reel", "--start", "1", "--end", "9",
+                     "--layout", "fit-bars", "--remove-silence", "--title-overlay",
+                     "--title", "Hello"])
+    assert code == 0
+    assert probe(out).duration_s < 7.5
+
+
+@requires_ffmpeg
+def test_long_captions_and_titles_stay_inside_the_frame(tmp_path):
+    from silence_remover.transcript import Word
+    clip = tmp_path / "flat.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i", "color=c=0x202020:size=320x180:"
+        "rate=25:duration=3", "-c:v", "libx264", "-preset", "ultrafast", str(clip),
+    ], check=True)
+    words = [Word(0.2, 0.8, "WWWWWWWWWW"), Word(0.8, 2.5, "MMMMMMMMMMM")]
+    out = render_reel(clip, tmp_path / "wide.mp4", 0, 3,
+                      ReelSettings(layout=Layout.FIT_BARS, captions=True, title_overlay=True),
+                      words=words, title="A very long title that keeps going and going on")
+    frame = frame_at(out, 1.5)
+    edges = np.concatenate([frame[:, :12], frame[:, -12:]], axis=1)
+    assert (edges > 150).sum() == 0
+
+
+@requires_ffmpeg
+def test_cli_reel_keeps_pauses_without_flag(tmp_path):
+    from .conftest import make_clip
+    clip = tmp_path / "pauses.mp4"
+    make_clip(clip, 10, [(3, 5)])
+    out = tmp_path / "o.mp4"
+    assert cli.main([str(clip), str(out), "--reel", "--start", "1", "--end", "9",
+                     "--layout", "fit-bars"]) == 0
+    assert probe(out).duration_s == pytest.approx(8.0, abs=0.15)

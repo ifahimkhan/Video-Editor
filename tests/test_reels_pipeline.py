@@ -1,5 +1,6 @@
 """End-to-end reels pipeline: transcript (fake Whisper) -> picks -> rendered clips."""
 
+import dataclasses
 import json
 from types import SimpleNamespace
 
@@ -142,3 +143,44 @@ def test_cancel_after_cached_transcript_stops_before_ranking(talk, tmp_path, whi
     find_highlights(talk, SETTINGS, cache_dir=out)  # fills the cache
     with pytest.raises(RenderCancelled):
         find_highlights(talk, SETTINGS, cache_dir=out, is_cancelled=lambda: True)
+
+
+class FakeWordWhisper(FakeWhisper):
+    def transcribe(self, audio, **kwargs):
+        self.calls += 1
+        segments = []
+        for i, text in enumerate(TEXTS):
+            start = i * 4.0 + 0.2
+            parts = text.split()
+            step = 3.4 / len(parts)
+            words = [SimpleNamespace(start=start + j * step, end=start + (j + 1) * step - 0.05,
+                                     word=" " + w) for j, w in enumerate(parts)]
+            segments.append(SimpleNamespace(start=start, end=start + 3.4, text=text,
+                                            words=words))
+        return iter(segments), SimpleNamespace(language="en", language_probability=0.99)
+
+
+@requires_ffmpeg
+def test_create_reels_with_captions_title_and_silence_cut(tmp_path, monkeypatch):
+    monkeypatch.setattr(transcript, "load_model", lambda size: FakeWordWhisper())
+    clip = tmp_path / "pausey.mp4"
+    make_clip(clip, 37, [(i * 4.0 + 3.6, i * 4.0 + 4.2) for i in range(9)])
+    settings = dataclasses.replace(SETTINGS, captions=True, title_overlay=True,
+                                   remove_silence=True, clip_count=1)
+    run = create_reels(clip, tmp_path / "out", settings)
+    reel = run.reels[0]
+    assert reel.length_s < reel.highlight.length_s  # pauses were cut
+    assert probe(reel.output).duration_s == pytest.approx(reel.length_s, abs=0.2)
+    cache = json.loads((tmp_path / "out" / "pausey.transcript.json").read_text("utf-8"))
+    assert cache["words"] and cache["key"]["version"] == 2
+
+
+@requires_ffmpeg
+def test_pauses_are_kept_unless_silence_removal_is_on(tmp_path, monkeypatch):
+    monkeypatch.setattr(transcript, "load_model", lambda size: FakeWordWhisper())
+    clip = tmp_path / "pausey.mp4"
+    make_clip(clip, 37, [(i * 4.0 + 3.6, i * 4.0 + 4.2) for i in range(9)])
+    run = create_reels(clip, tmp_path / "out", dataclasses.replace(SETTINGS, clip_count=1))
+    reel = run.reels[0]
+    assert reel.length_s == pytest.approx(reel.highlight.length_s)
+    assert probe(reel.output).duration_s == pytest.approx(reel.highlight.length_s, abs=0.2)

@@ -135,3 +135,7 @@ def test_split_rejects_webcam_outside_frame():
 def test_layout_rejects_unknown_source_size():
     with pytest.raises(ValueError):
         build_layout_graph(0, 0, ReelSettings())
+
+
+def test_silence_removal_is_off_by_default():
+    assert ReelSettings().remove_silence is False

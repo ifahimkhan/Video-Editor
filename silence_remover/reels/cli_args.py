@@ -5,11 +5,15 @@ from __future__ import annotations
 import argparse
 from typing import Callable
 
+from ..analysis import analyze
 from ..ffmpeg_tools import probe
+from ..segments import detect
+from ..transcript import speech_captions
+from .captions import clip_keep
 from .export import render_reel
 from .gemini_ranker import DEFAULT_GEMINI_MODEL, KEY_ENV_VAR
-from .pipeline import RANKERS, create_reels, find_highlights
-from .settings import Aspect, Layout, Rect, ReelSettings
+from .pipeline import RANKERS, REEL_SILENCE, create_reels, find_highlights
+from .settings import Aspect, CaptionStyle, Layout, Rect, ReelSettings
 
 
 def add_reel_arguments(parser: argparse.ArgumentParser, jobs) -> None:
@@ -55,6 +59,20 @@ def add_reel_arguments(parser: argparse.ArgumentParser, jobs) -> None:
     p.add_argument("--split-ratio", type=float, default=r.split_ratio,
                    help=f"with --layout split: share of the height for the screen "
                         f"(default {r.split_ratio})")
+    p.add_argument("--captions", action="store_true",
+                   help="with --reel/--reels: burn word-by-word captions into the video "
+                        "(needs faster-whisper)")
+    p.add_argument("--caption-style", choices=[c.value for c in CaptionStyle],
+                   default=r.caption_style.value,
+                   help=f"with --captions: look of the captions (default "
+                        f"{r.caption_style.value})")
+    p.add_argument("--title-overlay", action="store_true",
+                   help="with --reel/--reels: show the clip title at the top for the "
+                        "first seconds")
+    p.add_argument("--title", default=None,
+                   help="with --reel --title-overlay: the title text")
+    p.add_argument("--remove-silence", action="store_true",
+                   help="with --reel/--reels: cut pauses inside each clip")
 
 
 def reel_settings(args: argparse.Namespace) -> ReelSettings:
@@ -63,6 +81,8 @@ def reel_settings(args: argparse.Namespace) -> ReelSettings:
         code_zoom=args.code_zoom, clip_count=args.clips,
         min_length_s=args.min_length, max_length_s=args.max_length,
         webcam=Rect.parse(args.webcam) if args.webcam else None,
+        captions=args.captions, caption_style=args.caption_style,
+        title_overlay=args.title_overlay, remove_silence=args.remove_silence,
     )
 
 
@@ -71,7 +91,17 @@ def run_reel(args: argparse.Namespace, progress: Callable[[float], None]) -> int
     end_s = args.end
     if end_s is None:
         end_s = min(probe(args.input).duration_s, args.start + settings.max_length_s)
-    render_reel(args.input, args.output, args.start, end_s, settings, on_progress=progress)
+    words = ()
+    if settings.captions:
+        print("Transcribing the clip for captions…")
+        words = speech_captions(args.input, model_size=args.whisper_model,
+                                word_timestamps=True, start_s=args.start, end_s=end_s).words
+    keep = None
+    if settings.remove_silence:
+        keep_all = detect(analyze(args.input, use_vad=False), REEL_SILENCE).keep
+        keep = clip_keep(keep_all, args.start, end_s)
+    render_reel(args.input, args.output, args.start, end_s, settings, on_progress=progress,
+                words=words, title=args.title, keep=keep)
     print(f"\nSaved {args.output}")
     return 0
 

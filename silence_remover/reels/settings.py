@@ -29,6 +29,12 @@ class Layout(str, Enum):
 _TRACKED = frozenset({Layout.SPLIT, Layout.SPEAKER, Layout.CODE, Layout.AUTO})
 
 
+class CaptionStyle(str, Enum):
+    BOLD = "bold"        # capitals, thick outline, current word in yellow
+    BOX = "box"          # white text on a dark box, current word in yellow
+    MINIMAL = "minimal"  # plain white with a thin outline, no highlight
+
+
 class Aspect(str, Enum):
     VERTICAL = "9:16"   # Shorts, Reels, TikTok
     SQUARE = "1:1"
@@ -98,6 +104,10 @@ class ReelSettings:
                    automatically (bottom-right corner).
     code_zoom:     CODE/SPLIT/AUTO: 1.0 shows the largest crop that fits,
                    2.0 zooms in to half of that for bigger text.
+    captions:      burn word-by-word captions into the video.
+    caption_style: look of the captions.
+    title_overlay: show the clip's title at the top for the first seconds.
+    remove_silence: cut pauses inside each clip.
     """
 
     layout: Layout = Layout.FIT_BLUR
@@ -108,11 +118,16 @@ class ReelSettings:
     split_ratio: float = 0.6
     webcam: Rect | None = None
     code_zoom: float = 1.0
+    captions: bool = False
+    caption_style: CaptionStyle = CaptionStyle.BOLD
+    title_overlay: bool = False
+    remove_silence: bool = False
 
     def __post_init__(self) -> None:
         # Accept plain strings ("split", "9:16") from the CLI or saved settings.
         object.__setattr__(self, "layout", Layout(self.layout))
         object.__setattr__(self, "aspect", Aspect(self.aspect))
+        object.__setattr__(self, "caption_style", CaptionStyle(self.caption_style))
         _check_range("min_length_s", self.min_length_s, LENGTH_RANGE_S)
         _check_range("max_length_s", self.max_length_s, LENGTH_RANGE_S)
         if self.min_length_s > self.max_length_s:
