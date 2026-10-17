@@ -370,7 +370,7 @@ Without `--extract-audio`, `--swap-audio`, `--remove-echo`, `--transcript`, `--r
 | `--min-length S` / `--max-length S` | `30` / `60` | 5 to 180 | With `--reels`: clip length limits. |
 | `--ai {local,gemini}` | `local` | | With `--reels`: who picks the clips. `gemini` needs `GEMINI_API_KEY` and sends the transcript to Google. |
 | `--gemini-model NAME` | `gemini-2.5-flash` | | With `--ai gemini` (or set `GEMINI_MODEL`). |
-| `--layout NAME` | `fit-blur` | `auto`, `split`, `speaker`, `code`, `fit-blur`, `fit-bars`, `static-crop` | How the video fills the vertical frame. |
+| `--layout NAME` | `auto` | `auto`, `split`, `speaker`, `code`, `fit-blur`, `fit-bars`, `static-crop` | How the video fills the vertical frame. |
 | `--aspect RATIO` | `9:16` | `9:16`, `1:1`, `4:5` | Output frame shape. |
 | `--code-zoom Z` | `1.0` | 1.0 to 3.0 | Zoom into the typing area (`auto`, `split`, `code`). |
 | `--split-ratio R` | `0.6` | 0.3 to 0.8 | With `--layout split`: share of the height for the screen. |

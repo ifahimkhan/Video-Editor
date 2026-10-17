@@ -139,3 +139,9 @@ def test_layout_rejects_unknown_source_size():
 
 def test_silence_removal_is_off_by_default():
     assert ReelSettings().remove_silence is False
+
+
+def test_cli_layout_defaults_to_auto():
+    from silence_remover.cli import build_parser
+    args = build_parser().parse_args(["in.mp4", "out.mp4", "--reels"])
+    assert args.layout == Layout.AUTO.value

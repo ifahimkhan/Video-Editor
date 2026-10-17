@@ -15,6 +15,9 @@ from .gemini_ranker import DEFAULT_GEMINI_MODEL, KEY_ENV_VAR
 from .pipeline import RANKERS, REEL_SILENCE, create_reels, find_highlights
 from .settings import Aspect, CaptionStyle, Layout, Rect, ReelSettings
 
+# Same default as the GUI: tutorials are screen recordings with a webcam.
+CLI_LAYOUT = Layout.AUTO
+
 
 def add_reel_arguments(parser: argparse.ArgumentParser, jobs) -> None:
     """Add the reel jobs to the `jobs` exclusive group and their options to `parser`."""
@@ -43,11 +46,12 @@ def add_reel_arguments(parser: argparse.ArgumentParser, jobs) -> None:
                         "default local)")
     p.add_argument("--gemini-model", default=None, metavar="NAME",
                    help=f"with --ai gemini: model name (default {DEFAULT_GEMINI_MODEL})")
-    p.add_argument("--layout", choices=[m.value for m in Layout], default=r.layout.value,
-                   help="with --reel/--reels: fit-blur/fit-bars show the whole video "
-                        "centred, static-crop fills the canvas; speaker follows your face, "
-                        "code follows your typing, split shows typing above the webcam, "
-                        f"auto switches between code and speaker (default {r.layout.value})")
+    p.add_argument("--layout", choices=[m.value for m in Layout], default=CLI_LAYOUT.value,
+                   help="with --reel/--reels: auto switches between code and speaker, "
+                        "split shows typing above the webcam, speaker follows your face, "
+                        "code follows your typing; fit-blur/fit-bars show the whole video "
+                        "centred, static-crop fills the canvas "
+                        f"(default {CLI_LAYOUT.value})")
     p.add_argument("--aspect", choices=[a.value for a in Aspect], default=r.aspect.value,
                    help=f"with --reel/--reels: canvas shape (default {r.aspect.value})")
     p.add_argument("--webcam", metavar="X,Y,W,H", default=None,
