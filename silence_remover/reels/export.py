@@ -88,7 +88,7 @@ def render_reel(
         if ass is not None:
             Path(work, CAPTIONS_NAME).write_text(ass, encoding="utf-8")
         cmd = _build_command(input_path, output_path, start_s, end_s, info, encoder,
-                             cut_audio=keep is not None)
+                             cut_audio=keep is not None, title=_clean_title(title))
         kept_ms = sum(s.length_ms for s in keep) if keep is not None else clip_ms
         run_with_progress(cmd, kept_ms, output_path, render_progress, is_cancelled,
                           cwd=work)
@@ -157,8 +157,14 @@ def check_time_range(start_s: float, end_s: float, duration_s: float) -> None:
                          f"({duration_s:.1f}s).")
 
 
+def _clean_title(title: str | None) -> str:
+    """One-line title for the file's metadata (no control characters)."""
+    return " ".join("".join(ch if ch.isprintable() else " " for ch in title or "").split())
+
+
 def _build_command(input_path: Path, output_path: Path, start_s: float, end_s: float,
-                   info: MediaInfo, encoder: EncoderSettings, cut_audio: bool) -> list[str]:
+                   info: MediaInfo, encoder: EncoderSettings, cut_audio: bool,
+                   title: str = "") -> list[str]:
     # `-ss` before `-i` seeks fast and, when re-encoding, still frame-accurately.
     cmd = [
         find_binary("ffmpeg"), "-nostdin", "-y", "-v", "error",
@@ -170,6 +176,11 @@ def _build_command(input_path: Path, output_path: Path, start_s: float, end_s: f
     if info.has_audio:
         cmd += ["-map", "[a]" if cut_audio else "0:a:0", "-c:a", encoder.audio_codec,
                 "-b:a", encoder.audio_bitrate]
+    # The source's tags (its title, comments, chapters) describe the long
+    # recording, not the clip; players such as VLC show the title on screen.
+    cmd += ["-map_metadata", "-1", "-map_chapters", "-1"]
+    if title:
+        cmd += ["-metadata", f"title={title}"]
     if output_path.suffix.lower() in MP4_LIKE:
         cmd += ["-movflags", "+faststart"]
     cmd += ["-progress", "pipe:1", "-nostats", str(output_path)]

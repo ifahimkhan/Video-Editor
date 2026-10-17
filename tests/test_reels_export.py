@@ -204,3 +204,38 @@ def test_cli_reel_accepts_minutes_and_seconds(landscape_clip, tmp_path):
 def test_cli_rejects_bad_time():
     with pytest.raises(SystemExit):
         cli.build_parser().parse_args(["a.mp4", "b.mp4", "--reel", "--start", "1:75"])
+
+
+def format_tags(path) -> dict:
+    out = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format_tags",
+                          "-of", "json", str(path)], capture_output=True, text=True, check=True)
+    import json
+    return {k.lower(): v for k, v in json.loads(out.stdout).get("format", {})
+            .get("tags", {}).items()}
+
+
+@pytest.fixture(scope="module")
+def titled_source(tmp_path_factory):
+    path = tmp_path_factory.mktemp("meta") / "titled.mp4"
+    subprocess.run([
+        "ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+        "color=c=0x202020:size=320x180:rate=25:duration=4", "-f", "lavfi", "-i",
+        "sine=duration=4", "-metadata", "title=Original long recording",
+        "-metadata", "comment=private note", "-c:v", "libx264", "-preset", "ultrafast",
+        "-c:a", "aac", "-shortest", str(path)], check=True)
+    return path
+
+
+@requires_ffmpeg
+def test_reel_does_not_copy_source_metadata(titled_source, tmp_path):
+    out = render_reel(titled_source, tmp_path / "r.mp4", 0, 3,
+                      ReelSettings(layout=Layout.FIT_BARS))
+    tags = format_tags(out)
+    assert "title" not in tags and "comment" not in tags
+
+
+@requires_ffmpeg
+def test_reel_metadata_title_is_the_clip_title(titled_source, tmp_path):
+    out = render_reel(titled_source, tmp_path / "r.mp4", 0, 3,
+                      ReelSettings(layout=Layout.FIT_BARS), title="Fix it in one line")
+    assert format_tags(out)["title"] == "Fix it in one line"
