@@ -8,8 +8,10 @@ import sys
 from .analysis import analyze
 from .audio_export import DEFAULT_MP3_KBPS, MP3_BITRATES_KBPS, extract_mp3
 from .echo_removal import remove_echo
-from .ffmpeg_tools import FFmpegError
+from .ffmpeg_tools import FFmpegError, probe
 from .lossless import read_keyframes, render_lossless, snap_result
+from .reels.export import render_reel
+from .reels.settings import Aspect, Layout, Rect, ReelSettings
 from .render import render
 from .segments import DetectionMode, DetectionSettings, detect
 from .swap_audio import swap_audio
@@ -59,6 +61,27 @@ def build_parser() -> argparse.ArgumentParser:
     audio_jobs.add_argument("--transcript", action="store_true",
                             help="write what is said in INPUT to OUTPUT (.srt, .vtt or "
                                  ".txt) with faster-whisper (no silence removal)")
+    audio_jobs.add_argument("--reel", action="store_true",
+                            help="cut INPUT from --start to --end into a vertical reel "
+                                 "saved to OUTPUT (no silence removal)")
+    r = ReelSettings()
+    p.add_argument("--start", type=float, default=0.0, metavar="SECONDS",
+                   help="with --reel: where the clip starts (default 0)")
+    p.add_argument("--end", type=float, default=None, metavar="SECONDS",
+                   help=f"with --reel: where the clip ends (default start + "
+                        f"{r.max_length_s}s, or the end of the video)")
+    p.add_argument("--layout", choices=[m.value for m in Layout], default=r.layout.value,
+                   help="with --reel: fit-blur/fit-bars show the whole video centred, "
+                        "static-crop fills the canvas, split puts the screen above "
+                        f"the webcam (default {r.layout.value})")
+    p.add_argument("--aspect", choices=[a.value for a in Aspect], default=r.aspect.value,
+                   help=f"with --reel: canvas shape (default {r.aspect.value})")
+    p.add_argument("--webcam", metavar="X,Y,W,H", default=None,
+                   help="with --reel --layout split: webcam overlay position in pixels "
+                        "(default: bottom-right quarter)")
+    p.add_argument("--split-ratio", type=float, default=r.split_ratio,
+                   help=f"with --layout split: share of the height for the screen "
+                        f"(default {r.split_ratio})")
     p.add_argument("--translate", action="store_true",
                    help="with --transcript: translate the speech to English")
     p.add_argument("--whisper-model", choices=MODEL_SIZES, default=DEFAULT_MODEL,
@@ -85,6 +108,8 @@ def main(argv: list[str] | None = None) -> int:
             if result.length_warning:
                 print(f"Note: {result.length_warning}")
             return 0
+        if args.reel:
+            return _run_reel(args)
         if args.transcript:
             result = transcribe(args.input, args.output, translate=args.translate,
                                 model_size=args.whisper_model,
@@ -130,6 +155,20 @@ def main(argv: list[str] | None = None) -> int:
     except (FFmpegError, ValueError, OSError, TranscriptUnavailable) as exc:
         print(f"\nError: {exc}", file=sys.stderr)
         return 1
+
+
+def _run_reel(args: argparse.Namespace) -> int:
+    settings = ReelSettings(
+        layout=args.layout, aspect=args.aspect, split_ratio=args.split_ratio,
+        webcam=Rect.parse(args.webcam) if args.webcam else None,
+    )
+    end_s = args.end
+    if end_s is None:
+        end_s = min(probe(args.input).duration_s, args.start + settings.max_length_s)
+    render_reel(args.input, args.output, args.start, end_s, settings,
+                on_progress=_print_progress)
+    print(f"\nSaved {args.output}")
+    return 0
 
 
 def _print_progress(fraction: float) -> None:
