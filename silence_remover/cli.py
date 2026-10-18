@@ -10,6 +10,7 @@ from .audio_export import DEFAULT_MP3_KBPS, MP3_BITRATES_KBPS, extract_mp3
 from .echo_removal import remove_echo
 from .ffmpeg_tools import FFmpegError
 from .lossless import read_keyframes, render_lossless, snap_result
+from .reels.cli_args import add_reel_arguments, run_reel, run_reels
 from .render import render
 from .segments import DetectionMode, DetectionSettings, detect
 from .swap_audio import swap_audio
@@ -59,10 +60,11 @@ def build_parser() -> argparse.ArgumentParser:
     audio_jobs.add_argument("--transcript", action="store_true",
                             help="write what is said in INPUT to OUTPUT (.srt, .vtt or "
                                  ".txt) with faster-whisper (no silence removal)")
+    add_reel_arguments(p, audio_jobs)
     p.add_argument("--translate", action="store_true",
                    help="with --transcript: translate the speech to English")
     p.add_argument("--whisper-model", choices=MODEL_SIZES, default=DEFAULT_MODEL,
-                   help=f"with --transcript: speech model size (default {DEFAULT_MODEL}; "
+                   help=f"with --transcript/--reels: speech model size (default {DEFAULT_MODEL}; "
                         "larger is more accurate but slower)")
     p.add_argument("--mp3-bitrate", type=int, default=DEFAULT_MP3_KBPS,
                    choices=MP3_BITRATES_KBPS, metavar="KBPS",
@@ -85,6 +87,10 @@ def main(argv: list[str] | None = None) -> int:
             if result.length_warning:
                 print(f"Note: {result.length_warning}")
             return 0
+        if args.reel:
+            return run_reel(args, _print_progress)
+        if args.reels:
+            return run_reels(args, _print_progress)
         if args.transcript:
             result = transcribe(args.input, args.output, translate=args.translate,
                                 model_size=args.whisper_model,

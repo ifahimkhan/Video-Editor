@@ -26,6 +26,8 @@ class MediaInfo:
     has_video: bool
     has_audio: bool
     audio_channels: int = 0  # of the first audio track
+    width: int = 0   # of the first video track, 0 without video
+    height: int = 0
 
 
 def find_binary(name: str) -> str:
@@ -65,7 +67,7 @@ def probe(media_path: str | Path) -> MediaInfo:
 
     cmd = [
         find_binary("ffprobe"), "-v", "error",
-        "-show_entries", "format=duration:stream=codec_type,channels",
+        "-show_entries", "format=duration:stream=codec_type,channels,width,height",
         "-of", "json", str(path),
     ]
     result = subprocess.run(
@@ -83,9 +85,12 @@ def probe(media_path: str | Path) -> MediaInfo:
     streams = data.get("streams", [])
     stream_types = {s.get("codec_type") for s in streams}
     audio = [s for s in streams if s.get("codec_type") == "audio"]
+    video = [s for s in streams if s.get("codec_type") == "video"]
     return MediaInfo(
         duration_s=duration_s,
         has_video="video" in stream_types,
         has_audio=bool(audio),
         audio_channels=int(audio[0].get("channels") or 0) if audio else 0,
+        width=int(video[0].get("width") or 0) if video else 0,
+        height=int(video[0].get("height") or 0) if video else 0,
     )

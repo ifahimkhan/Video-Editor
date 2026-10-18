@@ -48,9 +48,14 @@ DEFAULT_ENCODER = EncoderSettings()
 
 
 def build_filter_graph(
-    keep: tuple[Segment, ...], duration_ms: int, has_video: bool, has_audio: bool
+    keep: tuple[Segment, ...], duration_ms: int, has_video: bool, has_audio: bool,
+    video_in: str = "[0:v:0]", audio_in: str = "[0:a:0]",
 ) -> str:
-    """Filter graph producing [v] and/or [a] containing only `keep`."""
+    """Filter graph producing [v] and/or [a] containing only `keep`.
+
+    `video_in`/`audio_in` name the input pads, so the cuts can follow other
+    filters (the reel layouts) in a larger graph.
+    """
     if not keep:
         raise ValueError("Nothing to keep: every part of the file is silent.")
     if not (has_video or has_audio):
@@ -62,12 +67,12 @@ def build_filter_graph(
     chains = []
     if has_video:
         chains.append(
-            f"[0:v:0]select='{select}',setpts='PTS-({offset})/TB'[v]"
+            f"{video_in}select='{select}',setpts='PTS-({offset})/TB'[v]"
         )
     if has_audio:
         chains.append(
             # Small audio frames make aselect cut within ~5 ms of the target.
-            f"[0:a:0]asetnsamples=n={AUDIO_FRAME_SAMPLES}:p=0,"
+            f"{audio_in}asetnsamples=n={AUDIO_FRAME_SAMPLES}:p=0,"
             f"aselect='{select}',asetpts='PTS-({offset})/TB',"
             "aresample=async=1:min_hard_comp=0.001:first_pts=0[a]"
         )
@@ -121,11 +126,12 @@ def _build_command(input_path, output_path, script_path, info, encoder) -> list[
     return cmd
 
 
-def run_with_progress(cmd, total_ms, output_path, on_progress, is_cancelled) -> None:
+def run_with_progress(cmd, total_ms, output_path, on_progress, is_cancelled,
+                      cwd=None) -> None:
     with tempfile.TemporaryFile() as err_file:
         proc = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=err_file, text=True,
-            creationflags=CREATE_NO_WINDOW,
+            creationflags=CREATE_NO_WINDOW, cwd=cwd,
         )
         assert proc.stdout is not None
         cancelled = False

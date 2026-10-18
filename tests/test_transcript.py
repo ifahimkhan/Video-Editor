@@ -160,3 +160,40 @@ def test_cli_transcript(tone_clip, tmp_path, fake_model, capsys):
 def test_cli_transcript_bad_extension(tmp_path, fake_model):
     assert cli.main([str(tmp_path / "in.mp4"), str(tmp_path / "out.doc"),
                      "--transcript"]) == 1
+
+
+@requires_ffmpeg
+def test_speech_captions_returns_captions_without_writing(tone_clip, fake_model):
+    progress = []
+    speech = transcript.speech_captions(tone_clip, on_progress=progress.append)
+    assert speech.captions == (Caption(0.2, 1.8, " One."), Caption(2.0, 3.9, " Two."))
+    assert speech.language == "en"
+    assert progress[-1] == 1.0
+
+
+class WordModel(FakeModel):
+    def transcribe(self, audio, **kwargs):
+        self.calls.append((audio, kwargs))
+        words = [SimpleNamespace(start=0.1, end=0.5, word=" Hi"),
+                 SimpleNamespace(start=0.6, end=1.0, word=" there.")]
+        seg = SimpleNamespace(start=0.1, end=1.0, text=" Hi there.", words=words)
+        return iter([seg]), SimpleNamespace(language="en", language_probability=0.9)
+
+
+@requires_ffmpeg
+def test_speech_captions_words_and_range_are_offset(tone_clip, monkeypatch):
+    model = WordModel([])
+    monkeypatch.setattr(transcript, "load_model", lambda size: model)
+    speech = transcript.speech_captions(tone_clip, word_timestamps=True,
+                                        start_s=2.0, end_s=3.5)
+    audio, kwargs = model.calls[0]
+    assert kwargs["word_timestamps"] is True
+    assert audio.size == pytest.approx(1.5 * 16_000, rel=0.03)
+    assert speech.captions[0].start_s == pytest.approx(2.1)
+    assert [w.text for w in speech.words] == ["Hi", "there."]
+    assert speech.words[1].start_s == pytest.approx(2.6)
+
+
+@requires_ffmpeg
+def test_speech_captions_without_words_has_none(tone_clip, fake_model):
+    assert transcript.speech_captions(tone_clip).words == ()
