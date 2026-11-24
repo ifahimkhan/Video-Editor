@@ -24,6 +24,7 @@ from PyQt6.QtWidgets import (
 
 from ..audio_export import DEFAULT_MP3_KBPS
 from ..lossless import snap_result
+from ..media_input import MEDIA_EXTENSIONS, supported_media_file
 from ..segments import (
     MIN_SILENCE_RANGE_MS,
     PADDING_RANGE_MS,
@@ -54,7 +55,7 @@ from .workers import (
 TRANSCRIPT_FILTER = "Subtitles (*.srt);;Web subtitles (*.vtt);;Plain text (*.txt)"
 ECHO_OUTPUT_FILTER ="MP3 (*.mp3);;WAV (*.wav);;FLAC (*.flac);;M4A (*.m4a)"
 AUDIO_FILTER = "Audio files (*.wav *.mp3 *.m4a *.aac *.flac *.ogg *.opus);;All files (*)"
-VIDEO_FILTER = "Media files (*.mp4 *.mkv *.mov *.avi *.webm *.m4v *.mp3 *.wav *.m4a)"
+VIDEO_FILTER = "Media files (" + " ".join("*" + ext for ext in MEDIA_EXTENSIONS) + ")"
 DEFAULTS = DetectionSettings()
 
 
@@ -88,6 +89,7 @@ class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle("Silence Remover")
+        self.setAcceptDrops(True)
         self.resize(900, 520)
         self._input_path: str | None = None
         self._profile = None
@@ -218,8 +220,34 @@ class MainWindow(QMainWindow):
 
     def _choose_input(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Open video", "", VIDEO_FILTER)
-        if not path:
+        if path:
+            self._open_input(path)
+
+    def _drop_path(self, event) -> str | None:
+        urls = event.mimeData().urls()
+        if len(urls) == 1 and urls[0].isLocalFile():
+            path = urls[0].toLocalFile()
+            if supported_media_file(path):
+                return path
+        return None
+
+    def dragEnterEvent(self, event) -> None:
+        if self.btn_open.isEnabled() and event.mimeData().hasUrls():
+            if self._drop_path(event):
+                event.acceptProposedAction()
+                return
+            self.statusBar().showMessage("Drop one supported local video or audio file.", 5000)
+        event.ignore()
+
+    def dropEvent(self, event) -> None:
+        path = self._drop_path(event) if self.btn_open.isEnabled() else None
+        if path is None:
+            event.ignore()
             return
+        event.acceptProposedAction()
+        self._open_input(path)
+
+    def _open_input(self, path: str) -> None:
         self._input_path = path
         self._profile = None
         self._result = None

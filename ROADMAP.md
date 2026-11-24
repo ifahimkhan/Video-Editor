@@ -57,7 +57,7 @@ extractor and swap-audio features were added.
 | 1.3 | More audio export formats and a bitrate choice in the GUI | 1 | S | ☐ | [#5](https://github.com/ifahimkhan/Video-Editor/issues/5) |
 | 1.4 | Remember settings and last folder | 1 | S | ☐ | [#6](https://github.com/ifahimkhan/Video-Editor/issues/6) |
 | 1.5 | Presets (Podcast, Lecture, Vlog, Aggressive) | 1 | S | ☐ | [#7](https://github.com/ifahimkhan/Video-Editor/issues/7) |
-| 1.6 | Drag and drop files onto the window | 1 | S | ☐ | [#8](https://github.com/ifahimkhan/Video-Editor/issues/8) |
+| 1.6 | Drag and drop files onto the window | 1 | S | ☑ | [#8](https://github.com/ifahimkhan/Video-Editor/issues/8) |
 | 1.7 | Keyboard shortcuts | 1 | S | ☐ | [#9](https://github.com/ifahimkhan/Video-Editor/issues/9) |
 | 2.1 | Playback preview with cuts skipped | 2 | L | ☐ | [#10](https://github.com/ifahimkhan/Video-Editor/issues/10) |
 | 2.2 | Manual cut editing on the timeline | 2 | L | ☐ | [#11](https://github.com/ifahimkhan/Video-Editor/issues/11) |
@@ -174,7 +174,7 @@ explicit flags override the preset.
 **Done when.** Selecting a preset moves all the sliders, and the CLI preset
 plus an override produces the expected settings in a unit test.
 
-### 1.6 Drag and drop files onto the window ☐ · S
+### 1.6 Drag and drop files onto the window ☑ · S
 
 **How.** `setAcceptDrops(True)`, plus `dragEnterEvent` / `dropEvent` on the
 main window that accept a single local file with a known media extension and

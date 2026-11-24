@@ -114,7 +114,7 @@ python -m silence_remover talk.mp4 talk_cut.mp4 # or: remove silence from the co
 
 ![The editor's start screen: an empty timeline above the Detection, Threshold, Minimum silence, Softness and Export controls](silence_remover/docs/image.png)
 
-Click **Open video…** and pick a video or audio file (mp4, mkv, mov, avi,
+Drop a single local media file onto the editor, or click **Open video…** and pick a file (mp4, mkv, mov, avi,
 webm, m4v, mp3, wav or m4a). The editor analyzes it once (a one-hour file
 takes a few seconds) and draws its waveform. Every tool then works on that
 file, and each export shows its progress and can be cancelled.

@@ -317,3 +317,46 @@ def test_transcript_cancelled_choice_does_nothing(app, window, monkeypatch):
                         lambda *a, **k: called.append(1) or ("", ""))
     window._choose_transcript()
     assert not called and window._worker is None
+
+
+def test_dropped_file_analyzes_the_media(window, gop_media, app):
+    from PyQt6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
+    from PyQt6.QtGui import QDragEnterEvent, QDropEvent
+
+    path, expected = gop_media
+    mime = QMimeData()
+    mime.setUrls([QUrl.fromLocalFile(str(path))])
+    flags = (Qt.DropAction.CopyAction, mime, Qt.MouseButton.LeftButton,
+             Qt.KeyboardModifier.NoModifier)
+    enter = QDragEnterEvent(QPoint(8, 8), *flags)
+    app.sendEvent(window, enter)
+    assert enter.isAccepted()
+    drop = QDropEvent(QPointF(8, 8), *flags)
+    app.sendEvent(window, drop)
+    assert drop.isAccepted()
+    assert window._worker is not None
+    assert window._worker.wait(30_000)
+    app.processEvents()
+    assert window._profile.duration_ms == expected.profile.duration_ms
+    assert "2 cuts" in window.lbl_stats.text()
+
+
+@pytest.mark.parametrize("kind", ["unsupported", "remote", "multiple", "busy"])
+def test_drag_refuses_invalid_inputs(window, gop_media, app, kind):
+    from PyQt6.QtCore import QMimeData, QPoint, Qt, QUrl
+    from PyQt6.QtGui import QDragEnterEvent
+
+    path, _ = gop_media
+    local = QUrl.fromLocalFile(str(path))
+    urls = {"unsupported": [QUrl.fromLocalFile(str(path.with_suffix(".txt")))],
+            "remote": [QUrl("https://example.com/video.mp4")], "multiple": [local, local],
+            "busy": [local]}
+    mime = QMimeData()
+    mime.setUrls(urls[kind])
+    window._set_busy(kind == "busy")
+    event = QDragEnterEvent(QPoint(8, 8), Qt.DropAction.CopyAction, mime,
+                            Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+    app.sendEvent(window, event)
+    assert not event.isAccepted()
+    if kind != "busy":
+        assert "one supported local" in window.statusBar().currentMessage()
